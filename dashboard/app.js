@@ -1,0 +1,311 @@
+/* Debate Relay — coach dashboard.
+ *
+ * A static page. Talks to two things:
+ *   1. The relay's public GET /relay/health  (no auth).
+ *   2. Supabase's REST API with the ANON key + Row-Level Security.
+ *
+ * It never sees a Postgres connection string and never reads ciphertext:
+ * RLS only lets the anon key read relay_rooms and read/insert
+ * dashboard_registry (see schema.sql).
+ */
+'use strict';
+
+// ── Constants from the relay / findings ──────────────────────────────
+const FREE_TIER_BYTES = 500 * 1024 * 1024; // Supabase free tier
+const DB_MULTIPLIER    = 3.5;               // measured DB growth ÷ content bytes (findings §3)
+const IDLE_GC_DAYS     = 7;                 // ROOM_IDLE_GC in the relay
+const STALE_DAYS       = 2;                 // "approaching" = this many days or fewer remaining
+const NOMINAL_ROOM     = 1.5 * 1024 * 1024; // fallback avg content size when no rooms yet
+
+const CFG_KEY = 'debate-relay-dashboard-config';
+
+// ── Config (localStorage) ────────────────────────────────────────────
+function loadConfig() {
+  try { return JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); }
+  catch { return null; }
+}
+function saveConfig(cfg) { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
+
+let config = loadConfig();
+
+// ── Small helpers ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+
+// The relay stores naive UTC timestamps; make sure JS parses them as UTC.
+function parseUtc(s) {
+  if (!s) return null;
+  const hasZone = /[zZ]|[+-]\d\d:?\d\d$/.test(s);
+  return new Date(hasZone ? s : s + 'Z');
+}
+function fmtBytes(n) {
+  if (n == null) return '—';
+  if (n < 1024) return n + ' B';
+  const u = ['KB', 'MB', 'GB'];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 ? 1 : 0) + ' ' + u[i];
+}
+function daysSince(date) {
+  if (!date) return Infinity;
+  return (Date.now() - date.getTime()) / 86400000;
+}
+function fmtAgo(date) {
+  if (!date) return '—';
+  const s = (Date.now() - date.getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' d ago';
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// ── Supabase REST ────────────────────────────────────────────────────
+function sbHeaders() {
+  return { apikey: config.anon, Authorization: 'Bearer ' + config.anon };
+}
+async function sbGet(path) {
+  const res = await fetch(config.supabase.replace(/\/$/, '') + '/rest/v1/' + path, { headers: sbHeaders() });
+  if (!res.ok) throw new Error('Supabase ' + res.status + ': ' + (await res.text()).slice(0, 200));
+  return res.json();
+}
+async function sbInsert(table, row) {
+  const res = await fetch(config.supabase.replace(/\/$/, '') + '/rest/v1/' + table, {
+    method: 'POST',
+    headers: { ...sbHeaders(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw new Error('Supabase ' + res.status + ': ' + (await res.text()).slice(0, 200));
+  return res.json();
+}
+
+// ── Health ───────────────────────────────────────────────────────────
+async function refreshHealth() {
+  const setDot = (cls) => { for (const el of [$('health-dot'), $('health-dot-lg')]) { el.className = 'dot ' + cls; } };
+  $('health-text').textContent = 'Checking…';
+  $('health-detail').textContent = '';
+  try {
+    const base = config.relay.replace(/\/$/, '');
+    const t0 = performance.now();
+    const res = await fetch(base + '/health', { cache: 'no-store' });
+    const ms = Math.round(performance.now() - t0);
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.ok) {
+      setDot('ok');
+      $('health-text').textContent = 'Relay is up';
+      $('health-detail').textContent = `${base}/health · responded in ${ms} ms`;
+    } else {
+      setDot('bad');
+      $('health-text').textContent = 'Relay responded, but not healthy';
+      $('health-detail').textContent = `HTTP ${res.status}`;
+    }
+  } catch (e) {
+    setDot('bad');
+    $('health-text').textContent = 'Relay is unreachable';
+    $('health-detail').textContent = String(e.message || e) +
+      ' — if it was idle, Render may be waking it (~60s). Try Refresh.';
+  }
+}
+
+// ── Rooms + registry ─────────────────────────────────────────────────
+async function refreshData() {
+  let rooms, registry;
+  try {
+    [rooms, registry] = await Promise.all([
+      sbGet('relay_rooms?select=id,created_at,last_activity,bytes_used,tombstoned'),
+      sbGet('dashboard_registry?select=room_id,label,owner,event,created_at'),
+    ]);
+  } catch (e) {
+    const msg = `<tr><td colspan="6" class="error">${esc(e.message || e)}</td></tr>`;
+    $('sessions-body').innerHTML = msg;
+    $('stale-body').innerHTML = `<tr><td colspan="3" class="error">${esc(e.message || e)}</td></tr>`;
+    $('storage-text').textContent = 'Could not load storage.';
+    return;
+  }
+
+  const byId = new Map(rooms.map((r) => [r.id, r]));
+  renderSessions(registry, byId);
+  renderStale(rooms, registry);
+  renderStorage(rooms);
+}
+
+function renderSessions(registry, byId) {
+  const body = $('sessions-body');
+  if (!registry.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted">No sessions registered yet. Click “+ Add session”.</td></tr>';
+    $('sessions-note').textContent = '';
+    return;
+  }
+  registry.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  const rows = registry.map((reg) => {
+    const room = byId.get(reg.room_id);
+    const live = room && !room.tombstoned;
+    const last = live ? parseUtc(room.last_activity) : null;
+    const status = live
+      ? '<span class="status-live">live</span>'
+      : '<span class="status-dead">dead</span>';
+    return `<tr>
+      <td>${esc(reg.label)}<div class="room-id">${esc(reg.room_id.slice(0, 8))}…</div></td>
+      <td>${esc(reg.owner) || '—'}</td>
+      <td>${esc(reg.event) || '—'}</td>
+      <td>${live ? fmtBytes(room.bytes_used) : '—'}</td>
+      <td>${live ? esc(fmtAgo(last)) : '—'}</td>
+      <td>${status}</td>
+    </tr>`;
+  });
+  body.innerHTML = rows.join('');
+  const liveCount = registry.filter((r) => { const m = byId.get(r.room_id); return m && !m.tombstoned; }).length;
+  const unregistered = [...byId.values()].filter((r) => !r.tombstoned && !registry.some((x) => x.room_id === r.id)).length;
+  $('sessions-note').textContent =
+    `${liveCount} live · ${registry.length - liveCount} dead` +
+    (unregistered ? ` · ${unregistered} live room${unregistered > 1 ? 's' : ''} not registered here` : '');
+}
+
+function renderStale(rooms, registry) {
+  const labelOf = new Map(registry.map((r) => [r.room_id, r.label]));
+  const stale = rooms
+    .filter((r) => !r.tombstoned)
+    .map((r) => ({ r, remaining: IDLE_GC_DAYS - daysSince(parseUtc(r.last_activity)) }))
+    .filter((x) => x.remaining <= STALE_DAYS)
+    .sort((a, b) => a.remaining - b.remaining);
+
+  const body = $('stale-body');
+  if (!stale.length) {
+    body.innerHTML = '<tr><td colspan="3" class="muted">Nothing approaching deletion. 🎉</td></tr>';
+    return;
+  }
+  body.innerHTML = stale.map(({ r, remaining }) => {
+    const idle = IDLE_GC_DAYS - remaining;
+    const cls = remaining <= 1 ? 'status-warn' : '';
+    const name = labelOf.get(r.id) || `<span class="room-id">${esc(r.id.slice(0, 8))}… (unregistered)</span>`;
+    return `<tr>
+      <td>${labelOf.has(r.id) ? esc(labelOf.get(r.id)) : name}</td>
+      <td>${idle.toFixed(1)} days</td>
+      <td class="${cls}">${remaining <= 0 ? 'due now' : remaining.toFixed(1) + ' days'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderStorage(rooms) {
+  const contentBytes = rooms.filter((r) => !r.tombstoned).reduce((s, r) => s + (r.bytes_used || 0), 0);
+  const roomCount = rooms.filter((r) => !r.tombstoned).length;
+  const estDb = contentBytes * DB_MULTIPLIER;
+  const pct = Math.min(100, (estDb / FREE_TIER_BYTES) * 100);
+
+  const fill = $('storage-fill');
+  fill.style.width = pct.toFixed(1) + '%';
+  fill.className = 'meter-fill' + (pct > 90 ? ' crit' : pct > 70 ? ' warn' : '');
+
+  $('storage-text').innerHTML =
+    `Est. <strong>${fmtBytes(estDb)}</strong> of ${fmtBytes(FREE_TIER_BYTES)} used ` +
+    `(${pct.toFixed(1)}%) across ${roomCount} live room${roomCount === 1 ? '' : 's'}.`;
+
+  const avg = roomCount ? contentBytes / roomCount : NOMINAL_ROOM;
+  const remainingContent = FREE_TIER_BYTES / DB_MULTIPLIER - contentBytes;
+  const roomsLeft = Math.max(0, Math.floor(remainingContent / avg));
+  $('storage-estimate').innerHTML =
+    `Content stored: ${fmtBytes(contentBytes)} · applying the measured ×${DB_MULTIPLIER} on-disk multiplier. ` +
+    `Roughly <strong>${roomsLeft}</strong> more room${roomsLeft === 1 ? '' : 's'} of the current average ` +
+    `(${fmtBytes(avg)}) would fit.`;
+}
+
+// ── Add session ──────────────────────────────────────────────────────
+// Share code: cmshare2.<roomId>.<key>.<major>.<minor>.<patch>
+// Keep segment two (roomId). DISCARD segment three (the encryption key).
+function parseShareCode(code) {
+  const parts = (code || '').trim().split('.');
+  if (parts.length < 2 || !parts[1]) return null;
+  return parts[1]; // room id only — never store parts[2]
+}
+
+function openAdd() {
+  $('add-code').value = '';
+  $('add-label').value = '';
+  $('add-owner').value = '';
+  $('add-event').value = '';
+  $('add-parsed').textContent = '';
+  $('add-error').classList.add('hidden');
+  $('add-modal').classList.remove('hidden');
+  $('add-code').focus();
+}
+function closeAdd() { $('add-modal').classList.add('hidden'); }
+
+async function submitAdd() {
+  const err = $('add-error');
+  err.classList.add('hidden');
+  const roomId = parseShareCode($('add-code').value);
+  const label = $('add-label').value.trim();
+  if (!roomId) { err.textContent = 'That does not look like a share code (need at least cmshare2.<roomId>…).'; err.classList.remove('hidden'); return; }
+  if (!label) { err.textContent = 'A label is required.'; err.classList.remove('hidden'); return; }
+  try {
+    await sbInsert('dashboard_registry', {
+      room_id: roomId,
+      label,
+      owner: $('add-owner').value.trim() || null,
+      event: $('add-event').value.trim() || null,
+    });
+    closeAdd();
+    await refreshData();
+  } catch (e) {
+    // Duplicate primary key → already registered.
+    err.textContent = /duplicate|conflict|409/i.test(String(e.message))
+      ? 'That room is already registered.'
+      : String(e.message || e);
+    err.classList.remove('hidden');
+  }
+}
+
+// ── Wiring ───────────────────────────────────────────────────────────
+function showConfig() {
+  if (config) {
+    $('cfg-relay').value = config.relay || '';
+    $('cfg-supabase').value = config.supabase || '';
+    $('cfg-anon').value = config.anon || '';
+  }
+  $('dashboard').classList.add('hidden');
+  $('config-panel').classList.remove('hidden');
+}
+function showDashboard() {
+  $('config-panel').classList.add('hidden');
+  $('dashboard').classList.remove('hidden');
+}
+
+function refreshAll() {
+  if (!config) return;
+  refreshHealth();
+  refreshData();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('settings-btn').onclick = showConfig;
+  $('refresh-btn').onclick = refreshAll;
+  $('add-btn').onclick = openAdd;
+  $('add-cancel').onclick = closeAdd;
+  $('add-save').onclick = submitAdd;
+  $('cfg-cancel').onclick = () => { if (config) showDashboard(); };
+  $('add-code').addEventListener('input', () => {
+    const id = parseShareCode($('add-code').value);
+    $('add-parsed').textContent = id ? `Room ID kept: ${id.slice(0, 12)}…  (key discarded)` : '';
+  });
+  $('cfg-save').onclick = () => {
+    const cfg = {
+      relay: $('cfg-relay').value.trim(),
+      supabase: $('cfg-supabase').value.trim(),
+      anon: $('cfg-anon').value.trim(),
+    };
+    if (!cfg.relay || !cfg.supabase || !cfg.anon) { alert('All three fields are required.'); return; }
+    config = cfg;
+    saveConfig(cfg);
+    showDashboard();
+    refreshAll();
+  };
+
+  if (config) { showDashboard(); refreshAll(); }
+  else { showConfig(); }
+
+  // Auto-refresh every 60s while the tab is open.
+  setInterval(() => { if (config && !document.hidden) refreshAll(); }, 60000);
+});

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debate Relay — Coach Dashboard</title>
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="health-dot" title="Relay health"></span>
+      <h1>Debate Relay</h1>
+    </div>
+    <div class="topbar-actions">
+      <button id="refresh-btn" class="btn" type="button">Refresh</button>
+      <button id="settings-btn" class="btn ghost" type="button">Settings</button>
+    </div>
+  </header>
+
+  <!-- First-run / reconfigure screen -->
+  <section id="config-panel" class="config hidden">
+    <div class="card config-card">
+      <h2>Connect your dashboard</h2>
+      <p class="muted">
+        These stay in this browser only (localStorage) — nothing is sent
+        anywhere except the two services you name below. The Supabase
+        <strong>anon</strong> key is meant to be public; it is safe here
+        because Row-Level Security restricts it to reading room metadata.
+        Do <strong>not</strong> paste a Postgres connection string or a
+        service-role key.
+      </p>
+      <label>Relay base URL
+        <input id="cfg-relay" type="url" placeholder="https://debate-relay.onrender.com/relay" />
+        <small class="muted">Ends in <code>/relay</code>. The same URL your team pastes into CardMirror.</small>
+      </label>
+      <label>Supabase project URL
+        <input id="cfg-supabase" type="url" placeholder="https://abcdefgh.supabase.co" />
+      </label>
+      <label>Supabase anon (public) key
+        <input id="cfg-anon" type="text" placeholder="eyJhbGciOi..." />
+      </label>
+      <div class="config-actions">
+        <button id="cfg-save" class="btn primary" type="button">Save &amp; connect</button>
+        <button id="cfg-cancel" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main dashboard -->
+  <main id="dashboard" class="grid hidden">
+
+    <section class="card" id="panel-health">
+      <h2>Health</h2>
+      <div class="health-line">
+        <span class="dot" id="health-dot-lg"></span>
+        <span id="health-text">Checking…</span>
+      </div>
+      <p class="muted" id="health-detail"></p>
+    </section>
+
+    <section class="card" id="panel-storage">
+      <h2>Storage</h2>
+      <div class="meter"><div class="meter-fill" id="storage-fill"></div></div>
+      <p id="storage-text" class="muted">Loading…</p>
+      <p id="storage-estimate" class="muted small"></p>
+    </section>
+
+    <section class="card wide" id="panel-sessions">
+      <div class="card-head">
+        <h2>Sessions</h2>
+        <button id="add-btn" class="btn primary small" type="button">+ Add session</button>
+      </div>
+      <table class="sessions">
+        <thead>
+          <tr><th>Label</th><th>Owner</th><th>Event</th><th>Size</th><th>Last activity</th><th>Status</th></tr>
+        </thead>
+        <tbody id="sessions-body">
+          <tr><td colspan="6" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+      <p class="muted small" id="sessions-note"></p>
+    </section>
+
+    <section class="card wide" id="panel-stale">
+      <h2>Stale — approaching 7-day idle deletion</h2>
+      <table class="stale">
+        <thead>
+          <tr><th>Label / Room</th><th>Idle for</th><th>Days remaining</th></tr>
+        </thead>
+        <tbody id="stale-body">
+          <tr><td colspan="3" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- Add-session modal -->
+  <div id="add-modal" class="modal hidden">
+    <div class="modal-card card">
+      <h2>Add a session</h2>
+      <p class="muted">
+        Paste the share code a partner sent you. We keep only the room ID
+        (segment two). The encryption key (segment three) is
+        <strong>discarded</strong> — that is what makes it impossible for
+        this dashboard to read student work.
+      </p>
+      <label>Share code
+        <input id="add-code" type="text" placeholder="cmshare2.930cd67c….NgE0QEdJ….1.0.0" />
+        <small class="muted" id="add-parsed"></small>
+      </label>
+      <label>Label <span class="req">*</span>
+        <input id="add-label" type="text" placeholder="1AC — Reproductive Services" />
+      </label>
+      <div class="row">
+        <label>Owner
+          <input id="add-owner" type="text" placeholder="Maya" />
+        </label>
+        <label>Event
+          <input id="add-event" type="text" placeholder="Michigan 2026" />
+        </label>
+      </div>
+      <p class="error hidden" id="add-error"></p>
+      <div class="config-actions">
+        <button id="add-save" class="btn primary" type="button">Add</button>
+        <button id="add-cancel" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot muted small">
+    Read-only metadata dashboard · document contents are never exposed to this page ·
+    <a href="https://github.com/ant981228/cardmirror" target="_blank" rel="noopener">source</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+# Debate Relay — one-click Deploy to Render blueprint.
+#
+# Coach experience: click "Deploy to Render", paste ONE connection
+# string (Supabase → Session pooler, NOT Direct — see docs/setup.md),
+# wait for the service to go Live, then copy two values into CardMirror
+# (the relay URL and the generated RELAY_TOKEN).
+#
+# Everything below the relay's own source lives in /relay; rootDir points
+# Render at it so the Dockerfile there is the build context.
+
+services:
+  - type: web
+    name: debate-relay
+    runtime: docker
+    rootDir: relay
+    plan: free              # no credit card required
+    region: oregon          # any region is fine; keep it near your team
+    healthCheckPath: /relay/health
+    # UptimeRobot pings this same path every 5 min to prevent cold starts
+    # (Render free tier sleeps after ~15 min idle; waking takes ~60s).
+    envVars:
+      # Shared bearer token for every machine on the team. Render mints a
+      # unique random value per deployment, so no two teams share a token
+      # and nothing sensitive is committed to the repo.
+      - key: RELAY_TOKEN
+        generateValue: true
+      # Supabase Postgres connection string. sync:false means Render will
+      # PROMPT for it at deploy time rather than reading it from the repo.
+      # Paste the Session pooler URI (host contains "pooler.supabase.com"),
+      # NOT the Direct connection — Direct is IPv6-only and Render dials
+      # IPv4, which fails silently at the very last step.
+      - key: DATABASE_URL
+        sync: false
