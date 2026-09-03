@@ -327,6 +327,84 @@ async function submitAdd() {
   }
 }
 
+// ── Team tokens (client-side generator; env-JSON model) ──────────────
+// The dashboard can't write Render env, so this manages the people list
+// locally, generates per-person tokens, and hands you the RELAY_TOKENS
+// JSON to paste into Render. It also keeps the ✉️ Ask roster in sync.
+const SEASON = String(new Date().getFullYear()).slice(2); // e.g. "26"
+
+function genToken(name) {
+  const slug = (name || '').replace(/[^A-Za-z0-9]/g, '') || 'user';
+  const rand = [...crypto.getRandomValues(new Uint8Array(16))]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `${slug}${SEASON}-${rand}`;
+}
+
+function team() { return (config && config.team) || []; }
+
+function persistTeam(list) {
+  if (!config) config = { relay: '', supabase: '', anon: '' };
+  config.team = list;
+  // Keep the ✉️ Ask roster in sync: every person with an email.
+  config.roster = list.filter((p) => p.email).map((p) => `${p.name} = ${p.email}`).join('\n');
+  saveConfig(config);
+}
+
+function relayTokensJson() {
+  const map = {};
+  for (const p of team()) map[p.token] = { label: p.name, role: p.role };
+  return JSON.stringify(map);
+}
+
+function renderTeam() {
+  const body = $('team-body');
+  const list = team();
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="5" class="muted">No one added yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map((p, i) => `<tr>
+    <td>${esc(p.name)}</td>
+    <td>${esc(p.email) || '—'}</td>
+    <td>${esc(p.role)}</td>
+    <td class="mono">${esc(p.token.slice(0, 22))}…</td>
+    <td><a class="btn-ask" data-rm="${i}">remove</a></td>
+  </tr>`).join('');
+  body.querySelectorAll('[data-rm]').forEach((b) => {
+    b.onclick = () => { const l = team().slice(); l.splice(+b.dataset.rm, 1); persistTeam(l); renderTeam(); };
+  });
+}
+
+function addPerson() {
+  const err = $('tk-error');
+  err.classList.add('hidden');
+  const name = $('tk-name').value.trim();
+  const email = $('tk-email').value.trim();
+  const role = $('tk-role').value;
+  if (!name) { err.textContent = 'Name is required.'; err.classList.remove('hidden'); return; }
+  if (team().some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+    err.textContent = 'Someone with that name is already on the list.'; err.classList.remove('hidden'); return;
+  }
+  persistTeam([...team(), { name, email, role, token: genToken(name) }]);
+  $('tk-name').value = ''; $('tk-email').value = '';
+  renderTeam();
+  $('tk-status').textContent = 'Added. Copy RELAY_TOKENS and paste it into Render to apply.';
+}
+
+async function copyText(str) {
+  try { await navigator.clipboard.writeText(str); return true; } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = str; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand('copy'); ta.remove(); return ok;
+  } catch { return false; }
+}
+
+function openTokens() { renderTeam(); $('tk-status').textContent = ''; $('tk-error').classList.add('hidden'); $('tokens-modal').classList.remove('hidden'); }
+function closeTokens() { $('tokens-modal').classList.add('hidden'); }
+
 // ── Wiring ───────────────────────────────────────────────────────────
 function showConfig() {
   if (config) {
@@ -352,6 +430,20 @@ function refreshAll() {
 document.addEventListener('DOMContentLoaded', () => {
   $('settings-btn').onclick = showConfig;
   $('refresh-btn').onclick = refreshAll;
+  $('tokens-btn').onclick = openTokens;
+  $('tk-close').onclick = closeTokens;
+  $('tk-add').onclick = addPerson;
+  $('tk-copy-tokens').onclick = async () => {
+    if (!team().length) { $('tk-status').textContent = 'Add at least one person first.'; return; }
+    const ok = await copyText(relayTokensJson());
+    $('tk-status').textContent = ok
+      ? 'RELAY_TOKENS copied. Paste it into Render → Environment → RELAY_TOKENS → Save.'
+      : 'Copy failed — here it is to copy manually:\n' + relayTokensJson();
+  };
+  $('tk-copy-roster').onclick = async () => {
+    const ok = await copyText(config?.roster || '');
+    $('tk-status').textContent = ok ? 'Roster copied (also auto-synced to Settings → Roster).' : (config?.roster || '(empty)');
+  };
   $('add-btn').onclick = openAdd;
   $('add-cancel').onclick = closeAdd;
   $('add-save').onclick = submitAdd;

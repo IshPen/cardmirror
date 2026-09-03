@@ -48,6 +48,23 @@ sent to Supabase. If a room's people aren't in the roster (or aren't
 named yet — single-token mode has no names), the button is disabled with
 a tooltip explaining who's missing.
 
+## Managing relay tokens (Tokens panel)
+
+The **Tokens** button (top bar) opens a people manager. Add/remove team
+members (name, email, role); each gets a per-person token like
+`ZaynHaniff26-<random>` — the readable prefix is just a label, the random
+suffix is the actual secret. The list lives in **this browser only**.
+
+It doesn't talk to Render (a browser can't edit Render's env), so the flow
+is: edit the list → **Copy RELAY_TOKENS** → paste into Render →
+Environment → `RELAY_TOKENS` → Save (applies on the next deploy).
+Removing someone and re-saving revokes them. The panel also keeps the
+✉️ Ask **roster** in sync automatically (every person with an email).
+
+> Setting `RELAY_TOKENS` switches the relay to multi-token mode: the old
+> shared token stops working, so every machine must move to its own
+> per-person token.
+
 ## Setup
 
 1. Deploy the relay and create the Supabase database (see

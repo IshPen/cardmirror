@@ -15,6 +15,7 @@
     </div>
     <div class="topbar-actions">
       <button id="refresh-btn" class="btn" type="button">Refresh</button>
+      <button id="tokens-btn" class="btn ghost" type="button">Tokens</button>
       <button id="settings-btn" class="btn ghost" type="button">Settings</button>
     </div>
   </header>
@@ -132,6 +133,49 @@
         <button id="add-save" class="btn primary" type="button">Add</button>
         <button id="add-cancel" class="btn ghost" type="button">Cancel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Team tokens modal -->
+  <div id="tokens-modal" class="modal hidden">
+    <div class="modal-card card tokens-card">
+      <h2>Team tokens</h2>
+      <p class="muted">
+        Add or remove people; each gets a per-person relay token. This list
+        lives in <strong>this browser only</strong>. When you change it, click
+        <strong>Copy RELAY_TOKENS</strong> and paste it into Render →
+        Environment → <code>RELAY_TOKENS</code> → Save (applies on the next
+        deploy). Removing someone here and re-saving revokes them.
+      </p>
+      <table class="team">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th>Token</th><th></th></tr>
+        </thead>
+        <tbody id="team-body"><tr><td colspan="5" class="muted">No one added yet.</td></tr></tbody>
+      </table>
+      <div class="row">
+        <label>Name <span class="req">*</span>
+          <input id="tk-name" type="text" placeholder="Zayn Haniff" />
+        </label>
+        <label>Email
+          <input id="tk-email" type="email" placeholder="zayn@school.edu" />
+        </label>
+        <label>Role
+          <select id="tk-role">
+            <option value="student">student</option>
+            <option value="coach">coach</option>
+          </select>
+        </label>
+      </div>
+      <p class="error hidden" id="tk-error"></p>
+      <div class="config-actions">
+        <button id="tk-add" class="btn primary small" type="button">+ Add person</button>
+        <span style="flex:1"></span>
+        <button id="tk-copy-tokens" class="btn small" type="button">Copy RELAY_TOKENS</button>
+        <button id="tk-copy-roster" class="btn small" type="button">Copy roster</button>
+        <button id="tk-close" class="btn ghost small" type="button">Close</button>
+      </div>
+      <p class="muted small" id="tk-status"></p>
     </div>
   </div>
 
