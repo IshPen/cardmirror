@@ -203,7 +203,12 @@ async function openDoc(roomId) {
       supabaseUrl: config.supabase, anonKey: config.anon,
       roomId, keyBytes: b64ToBytes(kr.keyB64),
     });
-    if (doc.empty) { $('viewer-body').innerHTML = '<span class="muted">This room has no content yet.</span>'; return; }
+    if (doc.empty) {
+      $('viewer-body').innerHTML = '<span class="muted">No content returned. Either the room is empty, ' +
+        'or <code>dashboard/viewer/enable-viewer.sql</code> hasn’t been run in Supabase (it grants read ' +
+        'access to the encrypted bytes).</span>';
+      return;
+    }
     if (doc.title) $('viewer-title').textContent = doc.title;
     $('viewer-body').innerHTML = doc.html;
   } catch (e) {
