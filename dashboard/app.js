@@ -369,8 +369,14 @@ function renderTeam() {
     <td>${esc(p.email) || '—'}</td>
     <td>${esc(p.role)}</td>
     <td class="mono">${esc(p.token.slice(0, 22))}…</td>
-    <td><a class="btn-ask" data-rm="${i}">remove</a></td>
+    <td><a class="btn-ask" data-cp="${i}">copy</a> <a class="btn-ask" data-rm="${i}">remove</a></td>
   </tr>`).join('');
+  body.querySelectorAll('[data-cp]').forEach((b) => {
+    b.onclick = async () => {
+      const ok = await copyText(team()[+b.dataset.cp].token);
+      $('tk-status').textContent = ok ? `Copied ${team()[+b.dataset.cp].name}'s token — paste into their CardMirror.` : team()[+b.dataset.cp].token;
+    };
+  });
   body.querySelectorAll('[data-rm]').forEach((b) => {
     b.onclick = () => { const l = team().slice(); l.splice(+b.dataset.rm, 1); persistTeam(l); renderTeam(); };
   });
