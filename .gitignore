@@ -94,8 +94,13 @@ bakeoff/
 # Python bytecode (relay/ smoke tests)
 __pycache__/
 
-# Bundled dashboard build outputs (run npm run build:viewer / build:member)
-dashboard/*/dist/
+# Bundled dashboard build outputs. The viewer bundle is ~4.5 MB (WASM),
+# so it's rebuilt locally, not committed. The member bundle is tiny
+# (~6 KB), so it IS committed — coaches can serve it without building.
+# (The global `dist/` rule above ignores it, so re-include it explicitly.)
+dashboard/viewer/dist/
+!dashboard/member/dist/
+!dashboard/member/dist/member.mjs
 FOCUS_AUDIT.md
 COLLAB_MOVE_SPIKE_partition-test.ts
 COLLAB_MOVE_SPIKE_identity-test.ts
