@@ -161,7 +161,7 @@ function roomPeople(reg, room, parts) {
   const push = (n) => {
     if (n && n !== 'anon' && !names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
   };
-  push(reg.owner);
+  if (reg) push(reg.owner);
   if (room) push(room.created_by);
   for (const p of parts) push(p);
   return names;
@@ -180,7 +180,7 @@ function askButton(reg, room, parts) {
   if (!known.length) {
     return `<a class="btn-ask disabled" title="No email on file for: ${esc(people.join(', '))} — add them in Settings → Roster">✉️ Ask</a>`;
   }
-  const label = reg.label || 'your session';
+  const label = (reg && reg.label) || 'your session';
   const subject = `CardMirror: access to “${label}”`;
   const body =
     `Hi ${known.map((k) => k.name).join(', ')},\n\n` +
@@ -197,27 +197,42 @@ function askButton(reg, room, parts) {
 
 function renderSessions(registry, byId, partsByRoom) {
   const body = $('sessions-body');
-  if (!registry.length) {
-    body.innerHTML = '<tr><td colspan="8" class="muted">No sessions registered yet. Click “+ Add session”.</td></tr>';
+  const regById = new Map(registry.map((r) => [r.room_id, r]));
+
+  // Every live room (registered or not) + registered rooms that have died.
+  const entries = [];
+  for (const room of byId.values()) {
+    if (!room.tombstoned) entries.push({ live: true, room, reg: regById.get(room.id), roomId: room.id });
+  }
+  for (const reg of registry) {
+    const room = byId.get(reg.room_id);
+    if (!room || room.tombstoned) entries.push({ live: false, room: null, reg, roomId: reg.room_id });
+  }
+
+  if (!entries.length) {
+    body.innerHTML = '<tr><td colspan="8" class="muted">No rooms yet. Start a session in CardMirror (or “+ Add session”).</td></tr>';
     $('sessions-note').textContent = '';
     return;
   }
-  registry.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-  const rows = registry.map((reg) => {
-    const room = byId.get(reg.room_id);
-    const live = room && !room.tombstoned;
+
+  const labelText = (e) => (e.reg && e.reg.label) || '';
+  entries.sort((a, b) => (b.live - a.live) || labelText(a).localeCompare(labelText(b)) || a.roomId.localeCompare(b.roomId));
+
+  const rows = entries.map((e) => {
+    const { live, room, reg, roomId } = e;
     const last = live ? parseUtc(room.last_activity) : null;
-    const status = live
-      ? '<span class="status-live">live</span>'
-      : '<span class="status-dead">dead</span>';
-    const parts = live ? (partsByRoom.get(reg.room_id) || []) : [];
+    const status = live ? '<span class="status-live">live</span>' : '<span class="status-dead">dead</span>';
+    const parts = live ? (partsByRoom.get(roomId) || []) : [];
     const partCell = parts.length
       ? esc(parts.map((p) => p || 'anon').join(', '))
       : (live ? '<span class="muted">none connected</span>' : '—');
+    const labelCell = reg
+      ? esc(reg.label)
+      : `<span class="muted">(unnamed)</span> <a class="btn-ask" data-name="${esc(roomId)}">name</a>`;
     return `<tr>
-      <td>${esc(reg.label)}<div class="room-id">${esc(reg.room_id.slice(0, 8))}…</div></td>
-      <td>${esc(reg.owner) || '—'}</td>
-      <td>${esc(reg.event) || '—'}</td>
+      <td>${labelCell}<div class="room-id">${esc(roomId.slice(0, 8))}…</div></td>
+      <td>${(reg && esc(reg.owner)) || '—'}</td>
+      <td>${(reg && esc(reg.event)) || '—'}</td>
       <td>${live ? (esc(room.created_by) || '<span class="muted">—</span>') : '—'}</td>
       <td>${partCell}</td>
       <td>${live ? fmtBytes(room.bytes_used) : '—'}</td>
@@ -226,11 +241,24 @@ function renderSessions(registry, byId, partsByRoom) {
     </tr>`;
   });
   body.innerHTML = rows.join('');
-  const liveCount = registry.filter((r) => { const m = byId.get(r.room_id); return m && !m.tombstoned; }).length;
-  const unregistered = [...byId.values()].filter((r) => !r.tombstoned && !registry.some((x) => x.room_id === r.id)).length;
+
+  // "name" a still-unregistered live room (we already know its room id; no
+  // share code needed — this only stores a label, never a key).
+  body.querySelectorAll('[data-name]').forEach((a) => {
+    a.onclick = async () => {
+      const label = prompt('Name this room:');
+      if (!label || !label.trim()) return;
+      try {
+        await sbInsert('dashboard_registry', { room_id: a.dataset.name, label: label.trim() });
+        await refreshData();
+      } catch (err) { alert('Could not save: ' + (err.message || err)); }
+    };
+  });
+
+  const liveCount = entries.filter((e) => e.live).length;
+  const named = entries.filter((e) => e.live && e.reg).length;
   $('sessions-note').textContent =
-    `${liveCount} live · ${registry.length - liveCount} dead` +
-    (unregistered ? ` · ${unregistered} live room${unregistered > 1 ? 's' : ''} not registered here` : '');
+    `${liveCount} live (${named} named) · ${entries.length - liveCount} dead`;
 }
 
 function renderStale(rooms, registry) {
