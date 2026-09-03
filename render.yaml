@@ -31,3 +31,8 @@ services:
       # IPv4, which fails silently at the very last step.
       - key: DATABASE_URL
         sync: false
+      # OPTIONAL (v2 per-student tokens): to attribute rooms/participants
+      # to individuals, add a RELAY_TOKENS env var in the Render dashboard
+      # (Environment tab) holding a JSON map of token -> {label, role}. See
+      # relay/README.md. Leave it unset to keep the single shared token. Not
+      # declared here so single-token deployments aren't prompted for it.

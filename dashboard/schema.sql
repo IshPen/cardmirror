@@ -72,3 +72,26 @@ create policy "dashboard anon adds registry"
 -- and NO policy grants anon anything, so every anon query returns zero
 -- rows. Ciphertext stays private. (Ending a session — a DELETE — is done
 -- from inside CardMirror in v1; the dashboard never writes to these.)
+
+-- 5. v2 attribution (per-student tokens) ------------------------------------
+-- `relay_rooms.created_by` is added by the relay on startup and is already
+-- readable via the relay_rooms SELECT policy above — nothing to do here.
+--
+-- `relay_room_participants` is created by the relay (it holds ONLY labels of
+-- who is currently connected — never tokens, never ciphertext). Run this
+-- AFTER deploying the v2 relay so the table exists; the guard makes it a
+-- no-op until then, so it's safe to run now and re-run later.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'relay_room_participants'
+  ) then
+    execute 'alter table relay_room_participants enable row level security';
+    execute 'grant select on relay_room_participants to anon';
+    execute 'revoke insert, update, delete on relay_room_participants from anon';
+    execute 'drop policy if exists "dashboard anon reads participants" on relay_room_participants';
+    execute 'create policy "dashboard anon reads participants" '
+            'on relay_room_participants for select to anon using (true)';
+  end if;
+end $$;

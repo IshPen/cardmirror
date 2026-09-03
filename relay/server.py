@@ -91,6 +91,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator, Optional
 
@@ -147,6 +148,10 @@ class RelayRoom(Base):
     last_activity = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     bytes_used = Column(BigInteger, default=0, nullable=False)
     tombstoned = Column(Boolean, default=False, nullable=False)
+    # v2 attribution: operator-assigned label of whoever created the room.
+    # Nullable, and always None in single-token mode. Never derived from
+    # document contents — the relay still reads no plaintext.
+    created_by = Column(String, nullable=True)
 
 
 class RelayRoomUpdate(Base):
@@ -171,6 +176,22 @@ class RelayRoomSnapshot(Base):
     blob = Column(String, nullable=False)  # base64 ciphertext, opaque
     covers_through_seq = Column(BigInteger, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RelayRoomParticipant(Base):
+    """v2: a DB read-model of who is currently connected, mirrored from the
+    in-memory `_room_streams` registry. A row exists only while a stream is
+    open (inserted at connect, deleted at disconnect / room end / GC), so a
+    metadata dashboard reading Postgres can show live participant names
+    without reaching into relay internals. Holds labels only — never
+    tokens, never ciphertext. A stale row from an unclean shutdown is
+    harmless: it shows a phantom participant until the room is swept."""
+    __tablename__ = "relay_room_participants"
+
+    room_id = Column(String, primary_key=True)
+    sid = Column(String, primary_key=True)
+    label = Column(String, nullable=True)
+    connected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 def get_db():
@@ -264,6 +285,9 @@ def _sweep(db: Session) -> int:
         db.query(RelayRoomSnapshot).filter(RelayRoomSnapshot.room_id == room.id).delete(
             synchronize_session=False
         )
+        db.query(RelayRoomParticipant).filter(
+            RelayRoomParticipant.room_id == room.id
+        ).delete(synchronize_session=False)
         if room.tombstoned:
             db.delete(room)
         else:
@@ -292,6 +316,12 @@ async def _lifespan(_app: FastAPI):
     global _loop
     _loop = asyncio.get_running_loop()
     Base.metadata.create_all(engine)
+    # Additive migration: create_all makes new tables but never alters
+    # existing ones, so add the v2 attribution column here (idempotent).
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE relay_rooms ADD COLUMN IF NOT EXISTS created_by VARCHAR"))
     threading.Thread(target=_sweeper_loop, daemon=True).start()
     yield
 
@@ -384,18 +414,79 @@ async def _min_version_gate(request, call_next):
     return await call_next(request)
 
 
-def require_relay_token(authorization: Optional[str] = Header(None)) -> None:
-    """Shared bearer token. This stops the relay being an open public
-    service; it is NOT the privacy mechanism (payloads are end-to-end
-    encrypted, and the per-recipient routing code is the isolation
-    boundary)."""
-    expected = os.getenv("RELAY_TOKEN", "")
-    if not expected:
-        raise HTTPException(500, "RELAY_TOKEN not configured on server")
+@dataclass(frozen=True)
+class Identity:
+    """Who is behind a request. In single-token mode `label` is None and
+    `role` is "coach" (full privileges) so behavior is identical to the
+    original shared-token relay."""
+    label: Optional[str]
+    role: str  # "coach" | "student"
+
+
+def _parse_token_map(raw: str) -> Optional[dict[str, Identity]]:
+    """Parse RELAY_TOKENS (JSON object of token -> {label, role}). Returns
+    None when unset/empty, which selects single-token mode. Raises on
+    malformed JSON so a typo fails loudly at startup rather than locking
+    everyone out silently."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    data = json.loads(raw)
+    if not isinstance(data, dict) or not data:
+        raise ValueError("RELAY_TOKENS must be a non-empty JSON object")
+    out: dict[str, Identity] = {}
+    for tok, meta in data.items():
+        meta = meta or {}
+        role = meta.get("role", "student")
+        if role not in ("coach", "student"):
+            raise ValueError(f"RELAY_TOKENS: bad role {role!r} (coach|student)")
+        out[tok] = Identity(label=meta.get("label"), role=role)
+    return out
+
+
+# Loaded once at import; None means single-token (legacy) mode.
+_TOKEN_MAP: Optional[dict[str, Identity]] = _parse_token_map(os.getenv("RELAY_TOKENS", ""))
+
+
+def _resolve_identity(authorization: Optional[str]) -> Identity:
+    """Pure auth core (no DB, no request state) so it is unit-testable.
+    Multi-token mode when RELAY_TOKENS is set; otherwise the original
+    single RELAY_TOKEN with full ("coach") privileges."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing bearer token")
-    if not hmac.compare_digest(authorization[len("Bearer "):], expected):
+    presented = authorization[len("Bearer "):]
+    if _TOKEN_MAP is None:  # ── single-token (legacy) mode
+        expected = os.getenv("RELAY_TOKEN", "")
+        if not expected:
+            raise HTTPException(500, "RELAY_TOKEN not configured on server")
+        if not hmac.compare_digest(presented, expected):
+            raise HTTPException(401, "Invalid relay token")
+        return Identity(label=None, role="coach")
+    # ── multi-token mode: compare against every entry (no early-exit on
+    # the token value) so a match anywhere is constant-time-ish.
+    matched: Optional[Identity] = None
+    for tok, ident in _TOKEN_MAP.items():
+        if hmac.compare_digest(presented, tok):
+            matched = ident
+    if matched is None:
         raise HTTPException(401, "Invalid relay token")
+    return matched
+
+
+def require_identity(authorization: Optional[str] = Header(None)) -> Identity:
+    """FastAPI dependency. Stops the relay being an open public service AND
+    (in multi-token mode) attaches an identity for attribution. NOT the
+    privacy mechanism — payloads are end-to-end encrypted and the
+    per-recipient routing code is the isolation boundary."""
+    return _resolve_identity(authorization)
+
+
+def _require_coach(identity: Identity) -> None:
+    """Destructive actions (end session) require the coach role — but only
+    once a token map exists. In single-token mode every caller is already
+    'coach', preserving the original open behavior."""
+    if _TOKEN_MAP is not None and identity.role != "coach":
+        raise HTTPException(403, "coach role required to end a session")
 
 
 def _epoch_ms(dt: datetime) -> int:
@@ -440,7 +531,7 @@ async def _raw_body(request: Request) -> bytes:
 # connections entirely (permanent accept-path stall at ~200 msg/s,
 # CPU idle); threadpool execution + the pool sizing above removes the
 # failure mode — overload now degrades to clean 503s instead.
-@app.post("/relay/messages", status_code=202, dependencies=[Depends(require_relay_token)])
+@app.post("/relay/messages", status_code=202, dependencies=[Depends(require_identity)])
 def post_message(
     raw: bytes = Depends(_raw_body),
     content_encoding: Optional[str] = Header(None),
@@ -503,7 +594,7 @@ def maybe_gzip_json(request: Request, payload: dict) -> Response:
     return Response(body, media_type="application/json", headers={"Vary": "Accept-Encoding"})
 
 
-@app.get("/relay/messages", dependencies=[Depends(require_relay_token)])
+@app.get("/relay/messages", dependencies=[Depends(require_identity)])
 def get_messages(
     request: Request,
     recipient: str = Query(..., min_length=1),
@@ -528,7 +619,7 @@ def get_messages(
     return maybe_gzip_json(request, {"messages": messages})
 
 
-@app.get("/relay/stream", dependencies=[Depends(require_relay_token)])
+@app.get("/relay/stream", dependencies=[Depends(require_identity)])
 async def stream_messages(
     request: Request,
     recipient: str = Query(..., min_length=1),
@@ -568,7 +659,7 @@ async def stream_messages(
 @app.delete(
     "/relay/messages/{msg_id}",
     status_code=204,
-    dependencies=[Depends(require_relay_token)],
+    dependencies=[Depends(require_identity)],
 )
 def delete_message(msg_id: str, db: Session = Depends(get_db)) -> Response:
     db.query(RelayMessage).filter(RelayMessage.id == msg_id).delete(
@@ -604,19 +695,40 @@ def _room_last_seq(db: Session, room_id: str) -> int:
     return int(snap.covers_through_seq) if snap is not None else 0
 
 
-@app.post("/relay/rooms", status_code=201, dependencies=[Depends(require_relay_token)])
-def create_room(db: Session = Depends(get_db)) -> JSONResponse:
+def _remove_participant(room_id: str, sid: str) -> None:
+    """Delete a participant read-model row on disconnect. Uses its own
+    short-lived session (the streaming request's session is long gone by
+    the time this runs) and never raises — a failed cleanup at most leaves
+    a phantom row that the sweeper reaps with the room."""
+    db = SessionLocal()
+    try:
+        db.query(RelayRoomParticipant).filter(
+            RelayRoomParticipant.room_id == room_id,
+            RelayRoomParticipant.sid == sid,
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception as e:  # pragma: no cover - best-effort cleanup
+        logger.warning("[relay] participant cleanup failed: %s", e)
+    finally:
+        db.close()
+
+
+@app.post("/relay/rooms", status_code=201)
+def create_room(
+    identity: Identity = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
     room_id = uuid.uuid4().hex
-    db.add(RelayRoom(id=room_id))
+    db.add(RelayRoom(id=room_id, created_by=identity.label))
     db.commit()
-    logger.info("[relay] room created %s…", room_id[:8])
+    logger.info("[relay] room created %s… by %s", room_id[:8], identity.label or "-")
     return JSONResponse({"roomId": room_id}, status_code=201)
 
 
 @app.post(
     "/relay/rooms/{room_id}/updates",
     status_code=202,
-    dependencies=[Depends(require_relay_token)],
+    dependencies=[Depends(require_identity)],
 )
 def post_room_update(
     room_id: str,
@@ -642,7 +754,7 @@ def post_room_update(
     return JSONResponse({"seq": seq}, status_code=202)
 
 
-@app.get("/relay/rooms/{room_id}/updates", dependencies=[Depends(require_relay_token)])
+@app.get("/relay/rooms/{room_id}/updates", dependencies=[Depends(require_identity)])
 def get_room_updates(
     request: Request,
     room_id: str,
@@ -684,7 +796,7 @@ def get_room_updates(
 @app.post(
     "/relay/rooms/{room_id}/snapshot",
     status_code=204,
-    dependencies=[Depends(require_relay_token)],
+    dependencies=[Depends(require_identity)],
 )
 def post_room_snapshot(
     room_id: str,
@@ -733,7 +845,7 @@ def post_room_snapshot(
 @app.post(
     "/relay/rooms/{room_id}/presence",
     status_code=202,
-    dependencies=[Depends(require_relay_token)],
+    dependencies=[Depends(require_identity)],
 )
 async def post_room_presence(
     room_id: str,
@@ -753,11 +865,12 @@ async def post_room_presence(
     return JSONResponse({}, status_code=202)
 
 
-@app.get("/relay/rooms/{room_id}/stream", dependencies=[Depends(require_relay_token)])
+@app.get("/relay/rooms/{room_id}/stream")
 async def stream_room(
     request: Request,
     room_id: str,
     sid: Optional[str] = Query(None, max_length=64),
+    identity: Identity = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """SSE: `event: hello` with the current cursor, then update/presence
@@ -773,6 +886,10 @@ async def stream_room(
         raise HTTPException(409, "room is full")
     last_seq = _room_last_seq(db, room_id)
     room.last_activity = datetime.utcnow()
+    # v2 attribution read-model: record this connection while it's live.
+    # `sid` may be absent, so key the row by a stable per-connection id.
+    pid = sid or uuid.uuid4().hex
+    db.merge(RelayRoomParticipant(room_id=room_id, sid=pid, label=identity.label))
     db.commit()
 
     queue: "asyncio.Queue[dict]" = asyncio.Queue(maxsize=STREAM_QUEUE_MAX)
@@ -797,6 +914,7 @@ async def stream_room(
                 peers.pop(queue, None)
                 if not peers:
                     _room_streams.pop(room_id, None)
+            _remove_participant(room_id, pid)
 
     return StreamingResponse(
         gen(),
@@ -805,12 +923,14 @@ async def stream_room(
     )
 
 
-@app.delete(
-    "/relay/rooms/{room_id}",
-    status_code=204,
-    dependencies=[Depends(require_relay_token)],
-)
-def delete_room(room_id: str, db: Session = Depends(get_db)) -> Response:
+@app.delete("/relay/rooms/{room_id}", status_code=204)
+def delete_room(
+    room_id: str,
+    identity: Identity = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Coach-only once a token map exists; open in single-token mode.
+    _require_coach(identity)
     room = db.get(RelayRoom, room_id)
     if room is None:
         raise HTTPException(404, "no such room")
@@ -824,6 +944,9 @@ def delete_room(room_id: str, db: Session = Depends(get_db)) -> Response:
         db.query(RelayRoomSnapshot).filter(RelayRoomSnapshot.room_id == room_id).delete(
             synchronize_session=False
         )
+        db.query(RelayRoomParticipant).filter(
+            RelayRoomParticipant.room_id == room_id
+        ).delete(synchronize_session=False)
         db.commit()
         if _loop is not None:
             _loop.call_soon_threadsafe(_push_to_room, room_id, {"t": "end"})

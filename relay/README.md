@@ -47,10 +47,36 @@ a VPS…). Requirements:
 
 Health check: `GET /relay/health` → `{"ok": true}` (no auth).
 
+## Per-student tokens (optional, attribution)
+
+By default one shared `RELAY_TOKEN` authenticates everyone. To attribute
+room creation and live participation to individuals, set **`RELAY_TOKENS`**
+instead — a JSON object mapping each person's token to an identity:
+
+```jsonc
+RELAY_TOKENS={
+  "s3cret-maya-…":  {"label": "Maya",     "role": "student"},
+  "s3cret-coach-…": {"label": "Coach Lee", "role": "coach"}
+}
+```
+
+- No client change: each person just pastes their own token into
+  **Settings → Collaboration → Custom relay token** (same field as before).
+- `role` is `student` or `coach`. Ending a session
+  (`DELETE /relay/rooms/{id}`) requires `coach` **only when `RELAY_TOKENS`
+  is set**; with a single `RELAY_TOKEN` it stays open, exactly as before.
+- Attribution is stored as operator-assigned labels only — the relay still
+  reads no plaintext. `relay_rooms.created_by` records the creator, and
+  `relay_room_participants` mirrors who is currently connected (labels, not
+  tokens) so a dashboard can display it.
+- Revoke a student by removing their token from `RELAY_TOKENS` and
+  restarting. Leave `RELAY_TOKENS` unset to keep the original behavior.
+
 ## Notes
 
 - One `RELAY_TOKEN` covers both features — card sharing and co-editing
-  sessions authenticate with the same shared bearer.
+  sessions authenticate with the same shared bearer. (With `RELAY_TOKENS`
+  set, any token in the map authenticates both features.)
 - Co-editing rooms: at most **10 people** per session (enforced at
   stream connect), 5 MB per update (the app chunks bigger ones),
   200 MB stored per room.

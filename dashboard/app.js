@@ -115,27 +115,38 @@ async function refreshData() {
   let rooms, registry;
   try {
     [rooms, registry] = await Promise.all([
-      sbGet('relay_rooms?select=id,created_at,last_activity,bytes_used,tombstoned'),
+      sbGet('relay_rooms?select=id,created_at,last_activity,bytes_used,tombstoned,created_by'),
       sbGet('dashboard_registry?select=room_id,label,owner,event,created_at'),
     ]);
   } catch (e) {
-    const msg = `<tr><td colspan="6" class="error">${esc(e.message || e)}</td></tr>`;
+    const msg = `<tr><td colspan="8" class="error">${esc(e.message || e)}</td></tr>`;
     $('sessions-body').innerHTML = msg;
     $('stale-body').innerHTML = `<tr><td colspan="3" class="error">${esc(e.message || e)}</td></tr>`;
     $('storage-text').textContent = 'Could not load storage.';
     return;
   }
 
+  // v2 attribution: live participants. Best-effort — a v1 relay has no
+  // participants table/policy yet, so tolerate a failure and show blanks.
+  const partsByRoom = new Map();
+  try {
+    const parts = await sbGet('relay_room_participants?select=room_id,label');
+    for (const p of parts) {
+      if (!partsByRoom.has(p.room_id)) partsByRoom.set(p.room_id, []);
+      partsByRoom.get(p.room_id).push(p.label);
+    }
+  } catch { /* pre-v2 relay: no participants read-model yet */ }
+
   const byId = new Map(rooms.map((r) => [r.id, r]));
-  renderSessions(registry, byId);
+  renderSessions(registry, byId, partsByRoom);
   renderStale(rooms, registry);
   renderStorage(rooms);
 }
 
-function renderSessions(registry, byId) {
+function renderSessions(registry, byId, partsByRoom) {
   const body = $('sessions-body');
   if (!registry.length) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">No sessions registered yet. Click “+ Add session”.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="muted">No sessions registered yet. Click “+ Add session”.</td></tr>';
     $('sessions-note').textContent = '';
     return;
   }
@@ -147,10 +158,16 @@ function renderSessions(registry, byId) {
     const status = live
       ? '<span class="status-live">live</span>'
       : '<span class="status-dead">dead</span>';
+    const parts = live ? (partsByRoom.get(reg.room_id) || []) : [];
+    const partCell = parts.length
+      ? esc(parts.map((p) => p || 'anon').join(', '))
+      : (live ? '<span class="muted">none connected</span>' : '—');
     return `<tr>
       <td>${esc(reg.label)}<div class="room-id">${esc(reg.room_id.slice(0, 8))}…</div></td>
       <td>${esc(reg.owner) || '—'}</td>
       <td>${esc(reg.event) || '—'}</td>
+      <td>${live ? (esc(room.created_by) || '<span class="muted">—</span>') : '—'}</td>
+      <td>${partCell}</td>
       <td>${live ? fmtBytes(room.bytes_used) : '—'}</td>
       <td>${live ? esc(fmtAgo(last)) : '—'}</td>
       <td>${status}</td>
