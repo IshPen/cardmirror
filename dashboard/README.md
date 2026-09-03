@@ -17,6 +17,7 @@ or host the folder on GitHub Pages / Netlify drop / any static host.
 | **Stale** | Rooms within ~2 days of the 7-day idle deletion |
 | **Storage** | Estimated DB usage vs. the 500 MB free tier, plus rooms-remaining |
 | **Add session** | Paste a share code, give it a label/owner/event |
+| **✉️ Ask for access** | On each live room, emails the people on it (via a `mailto:`) to ask for the share code |
 
 **It cannot read document contents** — by construction. It talks to
 Supabase with the public **anon key** under Row-Level Security, which is
@@ -24,6 +25,28 @@ allowed to read only room *metadata* (`relay_rooms`) and the names you
 add (`dashboard_registry`). Ciphertext tables stay unreadable. And when
 you add a session, the dashboard keeps only the room ID from the share
 code and **throws the encryption key away** — see below.
+
+## Asking a student for access (✉️ Ask)
+
+The dashboard never has document keys, so it can't read a doc on its own.
+The **✉️ Ask** button on each live room is a one-click request: it opens
+your email client pre-filled to the people working on that room, asking
+them to send you the session's share code (which you can then read with
+the [viewer](./viewer/)).
+
+It knows *who* from v2 attribution (`created_by` + live participants) and
+the room's registered owner. It knows their *email* from a **roster** you
+enter in **Settings → Roster** — one `Name = email` per line, e.g.:
+
+```
+Maya = maya@school.edu
+Alex = alex@school.edu
+```
+
+The roster lives in your browser (localStorage) only — it is **never**
+sent to Supabase. If a room's people aren't in the roster (or aren't
+named yet — single-token mode has no names), the button is disabled with
+a tooltip explaining who's missing.
 
 ## Setup
 

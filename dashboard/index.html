@@ -41,6 +41,12 @@
       <label>Supabase anon (public) key
         <input id="cfg-anon" type="text" placeholder="eyJhbGciOi..." />
       </label>
+      <label>Roster (optional) — one <code>Name = email</code> per line
+        <textarea id="cfg-roster" rows="4" placeholder="Maya = maya@school.edu&#10;Alex = alex@school.edu"></textarea>
+        <small class="muted">Maps the names v2 attributes to rooms (owner / created-by / participants)
+          to an email, so the “✉️ Ask for access” button can reach them. Stays in this browser only —
+          never sent to Supabase.</small>
+      </label>
       <div class="config-actions">
         <button id="cfg-save" class="btn primary" type="button">Save &amp; connect</button>
         <button id="cfg-cancel" class="btn ghost" type="button">Cancel</button>

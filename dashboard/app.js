@@ -143,6 +143,58 @@ async function refreshData() {
   renderStorage(rooms);
 }
 
+// ── Roster + "Ask for access" (mailto) ───────────────────────────────
+// The relay only knows names (v2 labels / registry owner), never emails.
+// The coach supplies a name→email roster, kept in this browser only.
+function rosterMap() {
+  const map = new Map();
+  for (const line of (config.roster || '').split('\n')) {
+    const m = line.match(/^\s*(.+?)\s*[=:,]\s*(.+?)\s*$/);
+    if (m && m[2].includes('@')) map.set(m[1].toLowerCase(), { name: m[1], email: m[2] });
+  }
+  return map;
+}
+
+// Everyone associated with a room: registry owner + v2 creator + participants.
+function roomPeople(reg, room, parts) {
+  const names = [];
+  const push = (n) => {
+    if (n && n !== 'anon' && !names.some((x) => x.toLowerCase() === n.toLowerCase())) names.push(n);
+  };
+  push(reg.owner);
+  if (room) push(room.created_by);
+  for (const p of parts) push(p);
+  return names;
+}
+
+// A mailto ✉️ button asking a room's people for the share code — or a
+// disabled hint when nobody's emailable yet.
+function askButton(reg, room, parts) {
+  const people = roomPeople(reg, room, parts);
+  if (!people.length) {
+    return '<a class="btn-ask disabled" title="No named people on this room yet (needs per-student tokens or a registered owner)">✉️ Ask</a>';
+  }
+  const roster = rosterMap();
+  const known = people.map((n) => roster.get(n.toLowerCase())).filter(Boolean);
+  const missing = people.filter((n) => !roster.get(n.toLowerCase()));
+  if (!known.length) {
+    return `<a class="btn-ask disabled" title="No email on file for: ${esc(people.join(', '))} — add them in Settings → Roster">✉️ Ask</a>`;
+  }
+  const label = reg.label || 'your session';
+  const subject = `CardMirror: access to “${label}”`;
+  const body =
+    `Hi ${known.map((k) => k.name).join(', ')},\n\n` +
+    `Could you give me access to the doc you're working on (“${label}”)? In CardMirror, ` +
+    `open Settings → Collaboration and send me the share code for this session.\n\nThanks!`;
+  const href =
+    `mailto:${known.map((k) => k.email).join(',')}` +
+    `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const title = missing.length
+    ? `Emailing ${known.map((k) => k.name).join(', ')} · no email on file for: ${missing.join(', ')}`
+    : `Email ${known.map((k) => k.name).join(', ')}`;
+  return `<a class="btn-ask" href="${esc(href)}" title="${esc(title)}">✉️ Ask</a>`;
+}
+
 function renderSessions(registry, byId, partsByRoom) {
   const body = $('sessions-body');
   if (!registry.length) {
@@ -170,7 +222,7 @@ function renderSessions(registry, byId, partsByRoom) {
       <td>${partCell}</td>
       <td>${live ? fmtBytes(room.bytes_used) : '—'}</td>
       <td>${live ? esc(fmtAgo(last)) : '—'}</td>
-      <td>${status}</td>
+      <td>${status}${live ? ' ' + askButton(reg, room, parts) : ''}</td>
     </tr>`;
   });
   body.innerHTML = rows.join('');
@@ -281,6 +333,7 @@ function showConfig() {
     $('cfg-relay').value = config.relay || '';
     $('cfg-supabase').value = config.supabase || '';
     $('cfg-anon').value = config.anon || '';
+    $('cfg-roster').value = config.roster || '';
   }
   $('dashboard').classList.add('hidden');
   $('config-panel').classList.remove('hidden');
@@ -312,8 +365,9 @@ document.addEventListener('DOMContentLoaded', () => {
       relay: $('cfg-relay').value.trim(),
       supabase: $('cfg-supabase').value.trim(),
       anon: $('cfg-anon').value.trim(),
+      roster: $('cfg-roster').value.trim(),
     };
-    if (!cfg.relay || !cfg.supabase || !cfg.anon) { alert('All three fields are required.'); return; }
+    if (!cfg.relay || !cfg.supabase || !cfg.anon) { alert('Relay URL, Supabase URL and anon key are required.'); return; }
     config = cfg;
     saveConfig(cfg);
     showDashboard();
