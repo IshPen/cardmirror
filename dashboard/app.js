@@ -475,6 +475,51 @@ function relayTokensJson() {
   return JSON.stringify(map);
 }
 
+// ── Coach auth + Sync-to-relay (v2.1 DB-backed tokens) ────────────────
+// Signs the coach in via Supabase Auth (no new dependency — plain REST),
+// then writes the whole team to the relay_tokens table as an authenticated
+// user. The relay picks it up within ~30s. No Render, no redeploy.
+const AUTH_KEY = 'debate-relay-auth';
+function authToken() { try { return localStorage.getItem(AUTH_KEY) || null; } catch { return null; } }
+function setAuthToken(t) { try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {} }
+function authStatusText() { return authToken() ? 'Signed in ✓' : 'Not signed in'; }
+
+async function coachSignIn(email, password) {
+  if (!config || !config.supabase || !config.anon) throw new Error('Configure Supabase first (Settings).');
+  if (!email || !password) throw new Error('Email and password required.');
+  const res = await fetch(config.supabase.replace(/\/$/, '') + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { apikey: config.anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) throw new Error('Sign-in failed: ' + (await res.text()).slice(0, 140));
+  const data = await res.json();
+  if (!data.access_token) throw new Error('Sign-in returned no token.');
+  setAuthToken(data.access_token);
+}
+
+async function syncTokensToRelay() {
+  const jwt = authToken();
+  if (!jwt) throw new Error('Sign in as the coach first.');
+  const rows = team().map((p) => ({ token: p.token, label: p.name, role: p.role }));
+  if (!rows.length) throw new Error('Add at least one person first.');
+  const base = config.supabase.replace(/\/$/, '') + '/rest/v1/relay_tokens';
+  const headers = { apikey: config.anon, Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' };
+  // 1) Upsert everyone on the list (no empty window: we add before pruning).
+  let res = await fetch(base, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify(rows),
+  });
+  if (res.status === 401) { setAuthToken(null); throw new Error('Session expired — sign in again.'); }
+  if (!res.ok) throw new Error('Sync failed (' + res.status + '): ' + (await res.text()).slice(0, 140));
+  // 2) Remove anyone no longer on the list. Tokens are URL-safe ([A-Za-z0-9-]).
+  const keep = rows.map((r) => r.token).join(',');
+  res = await fetch(base + '?token=not.in.(' + keep + ')', { method: 'DELETE', headers });
+  if (!res.ok) throw new Error('Prune failed (' + res.status + '): ' + (await res.text()).slice(0, 140));
+  return rows.length;
+}
+
 function renderTeam() {
   const body = $('team-body');
   const list = team();
@@ -526,7 +571,13 @@ async function copyText(str) {
   } catch { return false; }
 }
 
-function openTokens() { renderTeam(); $('tk-status').textContent = ''; $('tk-error').classList.add('hidden'); $('tokens-modal').classList.remove('hidden'); }
+function openTokens() {
+  renderTeam();
+  $('tk-status').textContent = '';
+  $('tk-error').classList.add('hidden');
+  $('tk-auth-status').textContent = authStatusText();
+  $('tokens-modal').classList.remove('hidden');
+}
 function closeTokens() { $('tokens-modal').classList.add('hidden'); }
 
 // ── Wiring ───────────────────────────────────────────────────────────
@@ -569,6 +620,23 @@ document.addEventListener('DOMContentLoaded', () => {
   $('tk-copy-roster').onclick = async () => {
     const ok = await copyText(config?.roster || '');
     $('tk-status').textContent = ok ? 'Roster copied (also auto-synced to Settings → Roster).' : (config?.roster || '(empty)');
+  };
+  $('tk-signin').onclick = async () => {
+    $('tk-status').textContent = 'Signing in…';
+    try {
+      await coachSignIn($('tk-email-auth').value.trim(), $('tk-password').value);
+      $('tk-password').value = '';
+      $('tk-auth-status').textContent = authStatusText();
+      $('tk-status').textContent = 'Signed in. Click “Sync to relay” to push your token list.';
+    } catch (e) { $('tk-status').textContent = String(e.message || e); }
+  };
+  $('tk-sync').onclick = async () => {
+    $('tk-status').textContent = 'Syncing…';
+    try {
+      const n = await syncTokensToRelay();
+      $('tk-status').textContent = `Synced ${n} token(s) to the relay. Takes effect within ~30s — no redeploy.`;
+    } catch (e) { $('tk-status').textContent = String(e.message || e); }
+    $('tk-auth-status').textContent = authStatusText();
   };
   $('member-btn').onclick = showMember;
   $('member-close').onclick = closeMember;

@@ -48,6 +48,7 @@ def test_parse_token_map():
 
 
 def test_single_token_mode():
+    server._db_token_map = None
     server._TOKEN_MAP = None
     os.environ["RELAY_TOKEN"] = "shared-secret"
     # valid → unnamed coach (full privileges, unchanged from original relay)
@@ -60,7 +61,25 @@ def test_single_token_mode():
     _require_coach(Identity(None, "coach"))  # no raise
 
 
+def test_db_token_precedence():
+    # DB tokens (relay_tokens table) win over env RELAY_TOKENS when present.
+    server._TOKEN_MAP = {"envtok": Identity("EnvUser", "student")}
+    server._db_token_map = {
+        "dbstudent": Identity("Zayn", "student"),
+        "dbcoach": Identity("Coach", "coach"),
+    }
+    assert _resolve_identity("Bearer dbstudent") == Identity("Zayn", "student")
+    assert _resolve_identity("Bearer dbcoach") == Identity("Coach", "coach")
+    _expect_http(401, _resolve_identity, "Bearer envtok")  # env ignored while DB active
+    _expect_http(403, _require_coach, Identity("Zayn", "student"))  # guard uses DB map
+    _require_coach(Identity("Coach", "coach"))
+    # Empty table (None) falls back to env tokens.
+    server._db_token_map = None
+    assert _resolve_identity("Bearer envtok") == Identity("EnvUser", "student")
+
+
 def test_multi_token_mode():
+    server._db_token_map = None
     server._TOKEN_MAP = {
         "tokA": Identity("Maya", "student"),
         "tokC": Identity("Coach Lee", "coach"),
@@ -77,6 +96,7 @@ def test_multi_token_mode():
 def test_single_token_ignores_map_none_guard():
     # Even a 'student' identity is unreachable in single-token mode, but the
     # guard must not raise when no map is configured.
+    server._db_token_map = None
     server._TOKEN_MAP = None
     _require_coach(Identity("Someone", "student"))  # no raise (map is None)
 

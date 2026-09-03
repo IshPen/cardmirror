@@ -132,6 +132,8 @@ tbody tr:last-child td { border-bottom: none; }
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 8px; color: var(--text); font: inherit;
 }
+.sync-box { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.sync-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
 table.team { width: 100%; margin: 6px 0 4px; }
 table.team td.mono { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
 .error { color: var(--red); font-size: 14px; margin: 8px 0 0; }

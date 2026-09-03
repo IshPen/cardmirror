@@ -1,5 +1,11 @@
 # Path B — the dashboard as an invitable member
 
+> **The UI is folded into the main dashboard** (the **Member** button and the
+> **Open** action on Sessions rows). The standalone page was removed. This
+> folder now holds the shared implementation (`pairing-client.ts`) and its
+> committed bundle (`dist/member.mjs`) that the main dashboard imports.
+
+
 Instead of pasting share codes, students **invite the dashboard** into a
 session (CardMirror's normal invite), and the dashboard automatically
 learns the doc's **name** — and its key, so the doc can be opened later.

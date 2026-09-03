@@ -1,8 +1,14 @@
-# v3 — Room name viewer (opt-in)
+# v3 — Room viewer (opt-in)
 
-Reads each room's **first heading (H1)** to use as a human name, by
-decrypting the room's content **in the coach's browser**. This is the
-document-viewer step from the spec's roadmap, scoped to just the title.
+> **The UI is folded into the main dashboard** — the **Open** button on
+> Sessions rows renders a room's document. The standalone viewer page was
+> removed. This folder now holds the shared decoder (`resolve-name.ts`,
+> `getRoomDoc`/`docToHtml`), the committed bundle (`dist/viewer.mjs`) the
+> main dashboard imports, and `enable-viewer.sql`.
+
+Decrypts and renders a room's document **in the coach's browser** — the
+name (first `pocket`/H1) and the full content. Requires a key (from an
+invite or a pasted share code).
 
 > **Read this first.** v1/v2 cannot read student work. This can. It
 > decrypts document content using the room key from a share code you

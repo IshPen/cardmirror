@@ -72,6 +72,15 @@ RELAY_TOKENS={
 - Revoke a student by removing their token from `RELAY_TOKENS` and
   restarting. Leave `RELAY_TOKENS` unset to keep the original behavior.
 
+**DB-backed tokens (v2.1, no redeploy).** The relay also reads a
+`relay_tokens` table (created automatically). When that table has any
+rows it becomes the source of truth and `RELAY_TOKENS` is ignored; when
+empty, it falls back to the env var. A background thread refreshes the
+cache every ~30s, so a dashboard that manages `relay_tokens` (as an
+authenticated Supabase coach — see `dashboard/relay-tokens.sql`) can add
+or revoke people **instantly, with no env edit and no redeploy**. Nothing
+changes for deployments that never populate the table.
+
 ## Notes
 
 - One `RELAY_TOKEN` covers both features — card sharing and co-editing

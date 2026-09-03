@@ -194,6 +194,22 @@ class RelayRoomParticipant(Base):
     connected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class RelayToken(Base):
+    """v2.1: per-person relay tokens, managed by the dashboard instead of
+    the RELAY_TOKENS env var — so adding/removing someone is instant and
+    needs no redeploy. When this table has any rows it is the source of
+    truth (env RELAY_TOKENS is then ignored); when empty, the relay falls
+    back to env exactly as before. The dashboard writes here as an
+    authenticated (coach) Supabase user; the anon key cannot read or write
+    it (RLS). The relay reads it as the table owner."""
+    __tablename__ = "relay_tokens"
+
+    token = Column(String, primary_key=True)
+    label = Column(String, nullable=True)
+    role = Column(String, nullable=False, default="student")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -311,6 +327,16 @@ def _sweeper_loop() -> None:
             db.close()
 
 
+# How quickly a dashboard add/remove takes effect on the relay.
+TOKEN_CACHE_REFRESH_SECONDS = 30
+
+
+def _token_cache_loop() -> None:
+    while True:
+        time.sleep(TOKEN_CACHE_REFRESH_SECONDS)
+        _refresh_db_token_cache()
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     global _loop
@@ -322,7 +348,9 @@ async def _lifespan(_app: FastAPI):
 
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE relay_rooms ADD COLUMN IF NOT EXISTS created_by VARCHAR"))
+    _refresh_db_token_cache()  # prime the DB token map before serving
     threading.Thread(target=_sweeper_loop, daemon=True).start()
+    threading.Thread(target=_token_cache_loop, daemon=True).start()
     yield
 
 
@@ -447,15 +475,51 @@ def _parse_token_map(raw: str) -> Optional[dict[str, Identity]]:
 # Loaded once at import; None means single-token (legacy) mode.
 _TOKEN_MAP: Optional[dict[str, Identity]] = _parse_token_map(os.getenv("RELAY_TOKENS", ""))
 
+# v2.1: token map sourced from the relay_tokens table, refreshed by a
+# background thread. None = table empty/unavailable → fall back to env.
+_db_token_map: Optional[dict[str, Identity]] = None
+
+
+def _refresh_db_token_cache() -> None:
+    """Reload the DB token map (background thread + startup). A whole-map
+    swap keeps readers lock-free; an empty table clears it so the relay
+    falls back to env RELAY_TOKENS."""
+    global _db_token_map
+    db = SessionLocal()
+    try:
+        rows = db.query(RelayToken).all()
+        if rows:
+            _db_token_map = {
+                r.token: Identity(
+                    label=r.label,
+                    role=r.role if r.role in ("coach", "student") else "student",
+                )
+                for r in rows
+            }
+        else:
+            _db_token_map = None
+    except Exception as e:  # never let a DB blip flip auth to a broken state
+        logger.warning("[relay] token cache refresh failed: %s", e)
+    finally:
+        db.close()
+
+
+def _active_token_map() -> Optional[dict[str, Identity]]:
+    """Precedence: DB tokens (if any) > env RELAY_TOKENS > None (single).
+    This lets the dashboard take over token management by populating the
+    table, with zero change for deployments that never do."""
+    return _db_token_map if _db_token_map is not None else _TOKEN_MAP
+
 
 def _resolve_identity(authorization: Optional[str]) -> Identity:
-    """Pure auth core (no DB, no request state) so it is unit-testable.
-    Multi-token mode when RELAY_TOKENS is set; otherwise the original
-    single RELAY_TOKEN with full ("coach") privileges."""
+    """Pure auth core (no request state) so it is unit-testable via the
+    cached maps. Multi-token when a DB/env map is active; otherwise the
+    original single RELAY_TOKEN with full ("coach") privileges."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing bearer token")
     presented = authorization[len("Bearer "):]
-    if _TOKEN_MAP is None:  # ── single-token (legacy) mode
+    active = _active_token_map()
+    if active is None:  # ── single-token (legacy) mode
         expected = os.getenv("RELAY_TOKEN", "")
         if not expected:
             raise HTTPException(500, "RELAY_TOKEN not configured on server")
@@ -465,7 +529,7 @@ def _resolve_identity(authorization: Optional[str]) -> Identity:
     # ── multi-token mode: compare against every entry (no early-exit on
     # the token value) so a match anywhere is constant-time-ish.
     matched: Optional[Identity] = None
-    for tok, ident in _TOKEN_MAP.items():
+    for tok, ident in active.items():
         if hmac.compare_digest(presented, tok):
             matched = ident
     if matched is None:
@@ -483,9 +547,9 @@ def require_identity(authorization: Optional[str] = Header(None)) -> Identity:
 
 def _require_coach(identity: Identity) -> None:
     """Destructive actions (end session) require the coach role — but only
-    once a token map exists. In single-token mode every caller is already
-    'coach', preserving the original open behavior."""
-    if _TOKEN_MAP is not None and identity.role != "coach":
+    once a token map (DB or env) is active. In single-token mode every
+    caller is already 'coach', preserving the original open behavior."""
+    if _active_token_map() is not None and identity.role != "coach":
         raise HTTPException(403, "coach role required to end a session")
 
 

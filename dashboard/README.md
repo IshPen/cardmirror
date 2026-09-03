@@ -77,15 +77,22 @@ members (name, email, role); each gets a per-person token like
 `ZaynHaniff26-<random>` — the readable prefix is just a label, the random
 suffix is the actual secret. The list lives in **this browser only**.
 
-It doesn't talk to Render (a browser can't edit Render's env), so the flow
-is: edit the list → **Copy RELAY_TOKENS** → paste into Render →
-Environment → `RELAY_TOKENS` → Save (applies on the next deploy).
-Removing someone and re-saving revokes them. The panel also keeps the
-✉️ Ask **roster** in sync automatically (every person with an email).
+There are two ways to apply changes:
 
-> Setting `RELAY_TOKENS` switches the relay to multi-token mode: the old
-> shared token stops working, so every machine must move to its own
-> per-person token.
+- **Sync to relay (recommended — instant, no redeploy).** Sign in as the
+  coach (Supabase Auth) in the panel, then **Sync to relay**. This writes
+  the whole list to the `relay_tokens` table; the relay picks it up within
+  ~30s. One-time setup: run [`relay-tokens.sql`](./relay-tokens.sql) and
+  create a coach login (Supabase → Authentication → Add user, auto-confirm).
+- **Copy RELAY_TOKENS (fallback).** Edit the list → **Copy RELAY_TOKENS**
+  → paste into Render → Environment → `RELAY_TOKENS` → Save (one redeploy).
+
+Either way, tokens look like `ZaynHaniff26-<random>` (readable prefix,
+random secret), the list lives in this browser, and the panel keeps the
+✉️ Ask **roster** in sync automatically.
+
+> Switching to multi-token mode (env or DB) stops the old shared token
+> working, so every machine must move to its own per-person token.
 
 ## Setup
 

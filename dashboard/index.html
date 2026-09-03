@@ -148,10 +148,10 @@
       <h2>Team tokens</h2>
       <p class="muted">
         Add or remove people; each gets a per-person relay token. This list
-        lives in <strong>this browser only</strong>. When you change it, click
-        <strong>Copy RELAY_TOKENS</strong> and paste it into Render →
-        Environment → <code>RELAY_TOKENS</code> → Save (applies on the next
-        deploy). Removing someone here and re-saving revokes them.
+        lives in <strong>this browser only</strong>. To apply changes, either
+        <strong>Sync to relay</strong> (instant, needs coach sign-in +
+        <code>relay-tokens.sql</code>) or <strong>Copy RELAY_TOKENS</strong>
+        and paste it into Render (one redeploy).
       </p>
       <table class="team">
         <thead>
@@ -176,10 +176,29 @@
       <p class="error hidden" id="tk-error"></p>
       <div class="config-actions">
         <button id="tk-add" class="btn primary small" type="button">+ Add person</button>
-        <span style="flex:1"></span>
-        <button id="tk-copy-tokens" class="btn small" type="button">Copy RELAY_TOKENS</button>
-        <button id="tk-copy-roster" class="btn small" type="button">Copy roster</button>
-        <button id="tk-close" class="btn ghost small" type="button">Close</button>
+      </div>
+
+      <div class="sync-box">
+        <div class="sync-title">Sync to relay <span class="muted small">(instant — no Render, no redeploy)</span></div>
+        <div class="row" id="tk-login-row">
+          <label>Coach email
+            <input id="tk-email-auth" type="email" placeholder="coach@school.edu" />
+          </label>
+          <label>Password
+            <input id="tk-password" type="password" placeholder="••••••••" />
+          </label>
+          <label style="display:flex;align-items:flex-end">
+            <button id="tk-signin" class="btn small" type="button">Sign in</button>
+          </label>
+        </div>
+        <div class="config-actions">
+          <button id="tk-sync" class="btn primary small" type="button">Sync to relay</button>
+          <span class="muted small" id="tk-auth-status">Not signed in</span>
+          <span style="flex:1"></span>
+          <button id="tk-copy-tokens" class="btn ghost small" type="button">Copy RELAY_TOKENS</button>
+          <button id="tk-copy-roster" class="btn ghost small" type="button">Copy roster</button>
+          <button id="tk-close" class="btn ghost small" type="button">Close</button>
+        </div>
       </div>
       <p class="muted small" id="tk-status"></p>
     </div>
