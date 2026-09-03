@@ -15,6 +15,7 @@
     </div>
     <div class="topbar-actions">
       <button id="refresh-btn" class="btn" type="button">Refresh</button>
+      <button id="member-btn" class="btn ghost" type="button">Member</button>
       <button id="tokens-btn" class="btn ghost" type="button">Tokens</button>
       <button id="settings-btn" class="btn ghost" type="button">Settings</button>
     </div>
@@ -41,6 +42,11 @@
       </label>
       <label>Supabase anon (public) key
         <input id="cfg-anon" type="text" placeholder="eyJhbGciOi..." />
+      </label>
+      <label>Dashboard relay token <span class="muted">(optional — enables invites &amp; doc viewing)</span>
+        <input id="cfg-relaytoken" type="text" placeholder="Dashboard26-…" />
+        <small class="muted">The dashboard's own token (add a “Dashboard” entry in the Tokens panel).
+          Lets it poll for invites and read docs. Stays in this browser only. Requires serving over http.</small>
       </label>
       <label>Roster (optional) — one <code>Name = email</code> per line
         <textarea id="cfg-roster" rows="4" placeholder="Maya = maya@school.edu&#10;Alex = alex@school.edu"></textarea>
@@ -176,6 +182,38 @@
         <button id="tk-close" class="btn ghost small" type="button">Close</button>
       </div>
       <p class="muted small" id="tk-status"></p>
+    </div>
+  </div>
+
+  <!-- Member (Path B) modal -->
+  <div id="member-modal" class="modal hidden">
+    <div class="modal-card card tokens-card">
+      <h2>Dashboard member code</h2>
+      <p class="muted">
+        Give this code to students. When someone <strong>invites</strong> it
+        into a session (CardMirror's normal invite), the dashboard learns
+        that doc's name — and can open it. No student-side change.
+      </p>
+      <div class="code" id="member-code">…</div>
+      <p class="error hidden" id="member-note"></p>
+      <div class="config-actions">
+        <button id="member-copy" class="btn small" type="button">Copy code</button>
+        <button id="member-poll" class="btn small" type="button">Poll for invites now</button>
+        <span style="flex:1"></span>
+        <button id="member-close" class="btn ghost small" type="button">Close</button>
+      </div>
+      <p class="muted small" id="member-status"></p>
+    </div>
+  </div>
+
+  <!-- Doc viewer modal -->
+  <div id="viewer-modal" class="modal hidden">
+    <div class="modal-card card viewer-card">
+      <div class="card-head">
+        <h2 id="viewer-title">Document</h2>
+        <button id="viewer-close" class="btn ghost small" type="button">Close</button>
+      </div>
+      <div id="viewer-body" class="viewer-body">Loading…</div>
     </div>
   </div>
 

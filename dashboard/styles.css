@@ -116,6 +116,17 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .modal-card { width: 100%; max-width: 480px; }
 .tokens-card { max-width: 680px; }
+.code { font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all;
+  background: var(--panel-2); padding: 10px 12px; border-radius: 8px; margin: 8px 0; }
+.viewer-card { max-width: 860px; max-height: 86vh; display: flex; flex-direction: column; }
+.viewer-body { overflow: auto; margin-top: 8px; padding: 10px 6px; border-top: 1px solid var(--border);
+  font-size: 14px; line-height: 1.55; }
+.viewer-body h1 { font-size: 19px; margin: 12px 0 6px; }
+.viewer-body h2 { font-size: 16px; margin: 10px 0 5px; }
+.viewer-body h3 { font-size: 14px; margin: 8px 0 4px; }
+.btn-open { margin-left: 6px; padding: 2px 8px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.btn-open:hover { border-color: var(--accent); }
 .modal-card select {
   display: block; width: 100%; margin-top: 6px; padding: 9px 11px;
   background: var(--panel-2); border: 1px solid var(--border);

@@ -143,6 +143,78 @@ async function refreshData() {
   renderStorage(rooms);
 }
 
+// ── Path B (member invites) + doc viewer ─────────────────────────────
+// The member + viewer bundles need http (WASM / IndexedDB / ES modules),
+// so they load lazily and fail gracefully from file://. Rooms the
+// dashboard has been invited to are persisted by the member bundle in
+// localStorage; we read that store directly so titles/keys show even
+// before the bundle loads.
+const KNOWN_ROOMS_KEY = 'debate-relay-known-rooms';
+let _memberMod = null;
+let _viewerMod = null;
+
+async function loadMember() { return (_memberMod ||= await import('./member/dist/member.mjs')); }
+async function loadViewer() { return (_viewerMod ||= await import('./viewer/dist/viewer.mjs')); }
+function b64ToBytes(b64) { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
+
+function knownRoomsStore() {
+  try { return JSON.parse(localStorage.getItem(KNOWN_ROOMS_KEY) || '{}') || {}; } catch { return {}; }
+}
+function knownRoom(roomId) { return knownRoomsStore()[roomId]; }
+
+// Poll the mailbox for new invites (needs the dashboard's own relay token).
+async function pollMemberInvites() {
+  if (!config || !config.relay || !config.relaytoken) return;
+  try {
+    const m = await loadMember();
+    await m.pollInvites(config.relay, config.relaytoken);
+  } catch { /* file:// or offline — persisted invites still display */ }
+}
+
+// Member-code modal.
+async function showMember() {
+  $('member-modal').classList.remove('hidden');
+  $('member-status').textContent = '';
+  $('member-note').classList.add('hidden');
+  $('member-code').textContent = '…';
+  try {
+    const m = await loadMember();
+    $('member-code').textContent = await m.getMemberCode();
+  } catch {
+    $('member-code').textContent = '(unavailable)';
+    $('member-note').textContent =
+      'Serve the dashboard over http to enable the member identity — it can’t run from a file://. ' +
+      'Try: python -m http.server 8000, then open http://localhost:8000/dashboard/';
+    $('member-note').classList.remove('hidden');
+  }
+}
+function closeMember() { $('member-modal').classList.add('hidden'); }
+
+// Doc viewer modal.
+async function openDoc(roomId) {
+  const kr = knownRoom(roomId);
+  $('viewer-title').textContent = (kr && kr.title) || 'Document';
+  $('viewer-body').textContent = 'Loading… (first open downloads the ~1.5 MB decoder)';
+  $('viewer-modal').classList.remove('hidden');
+  try {
+    if (!kr || !kr.keyB64) throw new Error('No key for this room — it must invite the dashboard first.');
+    const v = await loadViewer();
+    const doc = await v.getRoomDoc({
+      supabaseUrl: config.supabase, anonKey: config.anon,
+      roomId, keyBytes: b64ToBytes(kr.keyB64),
+    });
+    if (doc.empty) { $('viewer-body').innerHTML = '<span class="muted">This room has no content yet.</span>'; return; }
+    if (doc.title) $('viewer-title').textContent = doc.title;
+    $('viewer-body').innerHTML = doc.html;
+  } catch (e) {
+    $('viewer-body').innerHTML =
+      '<span class="error">' + esc(String(e.message || e)) + '</span>' +
+      '<div class="muted small" style="margin-top:8px">If a module failed to load, serve the dashboard over http. ' +
+      'If it says permission/denied, run <code>dashboard/viewer/enable-viewer.sql</code> in Supabase.</div>';
+  }
+}
+function closeViewer() { $('viewer-modal').classList.add('hidden'); }
+
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
 // The relay only knows names (v2 labels / registry owner), never emails.
 // The coach supplies a name→email roster, kept in this browser only.
@@ -226,9 +298,14 @@ function renderSessions(registry, byId, partsByRoom) {
     const partCell = parts.length
       ? esc(parts.map((p) => p || 'anon').join(', '))
       : (live ? '<span class="muted">none connected</span>' : '—');
+    // Name priority: registry label → doc name from an invite → unnamed.
+    const kr = knownRoom(roomId);
     const labelCell = reg
       ? esc(reg.label)
-      : `<span class="muted">(unnamed)</span> <a class="btn-ask" data-name="${esc(roomId)}">name</a>`;
+      : (kr && kr.title
+          ? `${esc(kr.title)} <span class="muted small">(from invite)</span>`
+          : `<span class="muted">(unnamed)</span> <a class="btn-ask" data-name="${esc(roomId)}">name</a>`);
+    const openBtn = (kr && kr.keyB64) ? ` <a class="btn-open" data-open="${esc(roomId)}">Open</a>` : '';
     return `<tr>
       <td>${labelCell}<div class="room-id">${esc(roomId.slice(0, 8))}…</div></td>
       <td>${(reg && esc(reg.owner)) || '—'}</td>
@@ -237,7 +314,7 @@ function renderSessions(registry, byId, partsByRoom) {
       <td>${partCell}</td>
       <td>${live ? fmtBytes(room.bytes_used) : '—'}</td>
       <td>${live ? esc(fmtAgo(last)) : '—'}</td>
-      <td>${status}${live ? ' ' + askButton(reg, room, parts) : ''}</td>
+      <td>${status}${live ? ' ' + askButton(reg, room, parts) : ''}${openBtn}</td>
     </tr>`;
   });
   body.innerHTML = rows.join('');
@@ -253,6 +330,11 @@ function renderSessions(registry, byId, partsByRoom) {
         await refreshData();
       } catch (err) { alert('Could not save: ' + (err.message || err)); }
     };
+  });
+
+  // "Open" a room the dashboard holds a key for (via an invite).
+  body.querySelectorAll('[data-open]').forEach((a) => {
+    a.onclick = () => openDoc(a.dataset.open);
   });
 
   const liveCount = entries.filter((e) => e.live).length;
@@ -376,6 +458,9 @@ function persistTeam(list) {
   config.team = list;
   // Keep the ✉️ Ask roster in sync: every person with an email.
   config.roster = list.filter((p) => p.email).map((p) => `${p.name} = ${p.email}`).join('\n');
+  // Auto-wire the dashboard's own poll token from a "Dashboard" entry.
+  const dash = list.find((p) => /dashboard/i.test(p.name));
+  if (dash) config.relaytoken = dash.token;
   saveConfig(config);
 }
 
@@ -445,6 +530,7 @@ function showConfig() {
     $('cfg-relay').value = config.relay || '';
     $('cfg-supabase').value = config.supabase || '';
     $('cfg-anon').value = config.anon || '';
+    $('cfg-relaytoken').value = config.relaytoken || '';
     $('cfg-roster').value = config.roster || '';
   }
   $('dashboard').classList.add('hidden');
@@ -455,9 +541,10 @@ function showDashboard() {
   $('dashboard').classList.remove('hidden');
 }
 
-function refreshAll() {
+async function refreshAll() {
   if (!config) return;
   refreshHealth();
+  await pollMemberInvites(); // refresh invited-room titles/keys (if configured)
   refreshData();
 }
 
@@ -478,6 +565,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const ok = await copyText(config?.roster || '');
     $('tk-status').textContent = ok ? 'Roster copied (also auto-synced to Settings → Roster).' : (config?.roster || '(empty)');
   };
+  $('member-btn').onclick = showMember;
+  $('member-close').onclick = closeMember;
+  $('member-copy').onclick = async () => {
+    const ok = await copyText($('member-code').textContent || '');
+    $('member-status').textContent = ok ? 'Member code copied — give it to students to invite.' : '';
+  };
+  $('member-poll').onclick = async () => {
+    $('member-status').textContent = 'Polling…';
+    await pollMemberInvites();
+    refreshData();
+    $('member-status').textContent = 'Checked for invites. Any new rooms now show in Sessions.';
+  };
+  $('viewer-close').onclick = closeViewer;
   $('add-btn').onclick = openAdd;
   $('add-cancel').onclick = closeAdd;
   $('add-save').onclick = submitAdd;
@@ -488,10 +588,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('cfg-save').onclick = () => {
     const cfg = {
+      ...(config || {}), // preserve team / relaytoken / etc.
       relay: $('cfg-relay').value.trim(),
       supabase: $('cfg-supabase').value.trim(),
       anon: $('cfg-anon').value.trim(),
       roster: $('cfg-roster').value.trim(),
+      // Field overrides the auto-wired token only when non-empty.
+      relaytoken: $('cfg-relaytoken').value.trim() || (config && config.relaytoken) || '',
     };
     if (!cfg.relay || !cfg.supabase || !cfg.anon) { alert('Relay URL, Supabase URL and anon key are required.'); return; }
     config = cfg;

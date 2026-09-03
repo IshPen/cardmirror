@@ -18,8 +18,30 @@ or host the folder on GitHub Pages / Netlify drop / any static host.
 | **Storage** | Estimated DB usage vs. the 500 MB free tier, plus rooms-remaining |
 | **Add session** | Paste a share code, give it a label/owner/event |
 | **✉️ Ask for access** | On each live room, emails the people on it (via a `mailto:`) to ask for the share code |
+| **Member** (Path B) | Shows the dashboard's own member code; students *invite* it into a session and it learns the doc name |
+| **Open** | On rooms the dashboard was invited to, renders the decrypted document |
 
-**It cannot read document contents** — by construction. It talks to
+### Core vs. served-only features
+
+The **core** (Health, Sessions, Stale, Storage, Add session, Tokens,
+✉️ Ask) works by opening `index.html` as a local file — no build, no
+server. Two features need the dashboard to be **served over http**
+(`python -m http.server 8000`, then `http://localhost:8000/dashboard/`),
+because they use browser features (WASM, IndexedDB, ES modules) that
+browsers block on `file://`:
+
+- **Member** (Path B): the dashboard gets its own `cmk1.…` member code.
+  A student who **invites** that code into a session hands the dashboard
+  the room's key + doc title — so its name appears in Sessions and you can
+  **Open** it. Give the dashboard its own relay token first: add a
+  **"Dashboard"** entry in the Tokens panel (auto-wires the poll token),
+  or paste one under Settings → Dashboard relay token.
+- **Open** (doc viewer): decrypts and renders a room's document in the
+  browser. Requires running `viewer/enable-viewer.sql` once (grants anon
+  read of the *encrypted* bytes). The prebuilt bundles are committed, so
+  no `npm` is needed — just serve the folder.
+
+**It cannot read document contents without a key** — by construction. It talks to
 Supabase with the public **anon key** under Row-Level Security, which is
 allowed to read only room *metadata* (`relay_rooms`) and the names you
 add (`dashboard_registry`). Ciphertext tables stay unreadable. And when

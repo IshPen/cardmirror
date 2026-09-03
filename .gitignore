@@ -94,13 +94,15 @@ bakeoff/
 # Python bytecode (relay/ smoke tests)
 __pycache__/
 
-# Bundled dashboard build outputs. The viewer bundle is ~4.5 MB (WASM),
-# so it's rebuilt locally, not committed. The member bundle is tiny
-# (~6 KB), so it IS committed — coaches can serve it without building.
-# (The global `dist/` rule above ignores it, so re-include it explicitly.)
-dashboard/viewer/dist/
+# Bundled dashboard build outputs ARE committed so a non-technical coach
+# can serve the dashboard without running a build (npm). The member
+# bundle is tiny (~6 KB); the viewer bundle is ~4.5 MB (inlined Loro
+# WASM). The global `dist/` rule above ignores them, so re-include the
+# built .mjs explicitly (but keep other dist/ contents ignored).
 !dashboard/member/dist/
 !dashboard/member/dist/member.mjs
+!dashboard/viewer/dist/
+!dashboard/viewer/dist/viewer.mjs
 FOCUS_AUDIT.md
 COLLAB_MOVE_SPIKE_partition-test.ts
 COLLAB_MOVE_SPIKE_identity-test.ts

@@ -34,20 +34,22 @@ function configTextStyle(doc: LoroDoc): void {
 }
 
 /**
- * Rebuild the document from a Loro snapshot (plus any tail update blobs)
- * and return the text of the topmost H1, or null if the document has no
- * H1. Blobs are Loro's native export format — the exact bytes the relay
- * stores, once decrypted.
+ * Rebuild the full ProseMirror document from a Loro snapshot (plus any
+ * tail update blobs). Blobs are Loro's native export format — the exact
+ * bytes the relay stores, once decrypted.
  */
-export function firstHeadingFromLoro(
+export function docFromLoro(
   snapshot: Uint8Array,
   increments: readonly Uint8Array[] = [],
-): string | null {
+): PMNode {
   const doc = new LoroDoc();
   configTextStyle(doc);
   doc.importBatch([snapshot, ...increments]);
-  const pm = createNodeFromLoroObj(schema, doc.getMap('doc') as never, new Map()) as PMNode;
+  return createNodeFromLoroObj(schema, doc.getMap('doc') as never, new Map()) as PMNode;
+}
 
+/** The topmost H1 (`pocket`) text of a rebuilt document, or null. */
+export function firstHeading(pm: PMNode): string | null {
   let title: string | null = null;
   pm.descendants((node) => {
     if (title !== null) return false; // already found; stop descending
@@ -61,6 +63,29 @@ export function firstHeadingFromLoro(
 }
 
 /**
+ * Rebuild the document from Loro bytes and return the text of the topmost
+ * H1, or null if the document has no H1.
+ */
+export function firstHeadingFromLoro(
+  snapshot: Uint8Array,
+  increments: readonly Uint8Array[] = [],
+): string | null {
+  return firstHeading(docFromLoro(snapshot, increments));
+}
+
+/** Decrypt sealed room blobs, then rebuild the full document. */
+export async function docFromEncrypted(
+  key: CryptoKey,
+  sealedSnapshot: Uint8Array,
+  sealedIncrements: readonly Uint8Array[] = [],
+): Promise<PMNode> {
+  const snapshot = await decryptBlob(key, sealedSnapshot);
+  const increments: Uint8Array[] = [];
+  for (const sealed of sealedIncrements) increments.push(await decryptBlob(key, sealed));
+  return docFromLoro(snapshot, increments);
+}
+
+/**
  * Decrypt sealed room blobs (AES-256-GCM, 12-byte IV ‖ ciphertext+tag —
  * the same envelope collab-crypto seals with) using the room key, then
  * extract the topmost H1. `key` is a WebCrypto AES-GCM CryptoKey imported
@@ -71,8 +96,5 @@ export async function firstHeadingFromEncrypted(
   sealedSnapshot: Uint8Array,
   sealedIncrements: readonly Uint8Array[] = [],
 ): Promise<string | null> {
-  const snapshot = await decryptBlob(key, sealedSnapshot);
-  const increments: Uint8Array[] = [];
-  for (const sealed of sealedIncrements) increments.push(await decryptBlob(key, sealed));
-  return firstHeadingFromLoro(snapshot, increments);
+  return firstHeading(await docFromEncrypted(key, sealedSnapshot, sealedIncrements));
 }
