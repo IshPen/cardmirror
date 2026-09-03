@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debate Relay — Dashboard member (invites)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 20px; } h2 { font-size: 15px; margin-top: 24px; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input { width: 100%; padding: 9px 11px; border: 1px solid #8884; border-radius: 8px; font: inherit; background: Field; color: FieldText; }
+    button { margin-top: 10px; padding: 9px 16px; border: 0; border-radius: 8px; background: #5b8cff; color: #fff; font: inherit; cursor: pointer; }
+    button.ghost { background: transparent; border: 1px solid #8884; color: inherit; }
+    .code { font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all; background: #8881; padding: 10px 12px; border-radius: 8px; }
+    .note { color: #8890a0; font-size: 13px; }
+    .warn { border-left: 3px solid #d29922; padding: 8px 12px; background: #d2992215; border-radius: 4px; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #8883; }
+    th { font-size: 12px; text-transform: uppercase; color: #8890a0; }
+    .mono { font-family: ui-monospace, monospace; font-size: 12px; color: #8890a0; }
+    .err { color: #f85149; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard member <span class="note">(Path B · invites)</span></h1>
+
+  <div class="warn">
+    Give students the <strong>member code</strong> below. When a student
+    <strong>invites</strong> that code into a session (CardMirror's normal
+    invite), this page catches the invite and learns the doc's
+    <strong>name</strong> — and its key, so the doc can be opened later.
+    Keep this page open/refreshed: invites expire from the mailbox after
+    ~3 hours if never caught. Must be served over http (not opened from a
+    file).
+  </div>
+
+  <h2>Your dashboard's member code</h2>
+  <div class="code" id="member-code">generating…</div>
+  <button id="copy-code" class="ghost" type="button">Copy code</button>
+  <p class="note">This identity lives in this browser only. Students add it once, then invite it whenever they want you to see a doc.</p>
+
+  <h2>Connection</h2>
+  <label>Relay base URL <span class="note">(ends in /relay)</span></label>
+  <input id="relay" type="url" placeholder="https://your-relay.onrender.com/relay" />
+  <label>Dashboard relay token <span class="note">(its own token from the Tokens panel)</span></label>
+  <input id="token" type="text" placeholder="Dashboard26-…" />
+  <div>
+    <button id="poll" type="button">Poll for invites</button>
+    <span class="note" id="status"></span>
+  </div>
+
+  <h2>Rooms you've been invited to</h2>
+  <table>
+    <thead><tr><th>Doc name</th><th>Room</th><th>Invited</th></tr></thead>
+    <tbody id="rooms"><tr><td colspan="3" class="note">None yet — share your code and have someone invite it.</td></tr></tbody>
+  </table>
+
+  <script type="module">
+    import { getMemberCode, pollInvites, knownRooms } from './dist/member.mjs';
+
+    const $ = (id) => document.getElementById(id);
+    const CFG = 'debate-relay-dashboard-config';
+    const cfg = (() => { try { return JSON.parse(localStorage.getItem(CFG) || '{}') || {}; } catch { return {}; } })();
+    $('relay').value = cfg.relay || '';
+    $('token').value = cfg.relayToken || '';
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (m) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+    const ago = (t) => { const s = (Date.now() - t) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.round(s/60)+'m ago'; if (s < 86400) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; };
+
+    function renderRooms(list) {
+      const body = $('rooms');
+      if (!list.length) { body.innerHTML = '<tr><td colspan="3" class="note">None yet — share your code and have someone invite it.</td></tr>'; return; }
+      list.sort((a, b) => b.at - a.at);
+      body.innerHTML = list.map((r) => `<tr>
+        <td>${esc(r.title) || '<span class="note">(untitled)</span>'}</td>
+        <td class="mono">${esc(r.roomId.slice(0, 10))}…</td>
+        <td class="note">${ago(r.at)}</td>
+      </tr>`).join('');
+    }
+
+    getMemberCode().then((c) => { $('member-code').textContent = c; });
+    renderRooms(knownRooms());
+
+    $('copy-code').onclick = async () => {
+      try { await navigator.clipboard.writeText($('member-code').textContent); $('copy-code').textContent = 'Copied!'; setTimeout(() => $('copy-code').textContent = 'Copy code', 1500); } catch {}
+    };
+
+    async function poll() {
+      const relay = $('relay').value.trim(), token = $('token').value.trim();
+      if (!relay || !token) { $('status').textContent = 'Relay URL and token required.'; return; }
+      const saved = (() => { try { return JSON.parse(localStorage.getItem(CFG) || '{}') || {}; } catch { return {}; } })();
+      saved.relay = relay; saved.relayToken = token; localStorage.setItem(CFG, JSON.stringify(saved));
+      $('status').textContent = 'Polling…';
+      try {
+        const list = await pollInvites(relay, token);
+        renderRooms(list);
+        $('status').textContent = `Checked. ${list.length} room(s) known.`;
+      } catch (e) {
+        $('status').innerHTML = '<span class="err">' + esc(e.message || e) + '</span>';
+      }
+    }
+    $('poll').onclick = poll;
+    // Auto-poll every 30s while open (invites expire in ~3h).
+    setInterval(() => { if (!document.hidden && $('token').value.trim()) poll(); }, 30000);
+  </script>
+</body>
+</html>
