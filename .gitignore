@@ -93,6 +93,9 @@ bakeoff/
 
 # Python bytecode (relay/ smoke tests)
 __pycache__/
+
+# v3 viewer build output (run `npm run build:viewer` to regenerate)
+dashboard/viewer/dist/
 FOCUS_AUDIT.md
 COLLAB_MOVE_SPIKE_partition-test.ts
 COLLAB_MOVE_SPIKE_identity-test.ts
