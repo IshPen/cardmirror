@@ -924,13 +924,13 @@ function applyHeading(type) {
   if (!_editHandle) return;
   const cap = type[0].toUpperCase() + type.slice(1);
   const r = _editHandle.setHeading(type);
-  const msg = {
-    converted: cap + ' applied.',
-    already: 'Already a ' + cap + '.',
-    'in-card': 'That line is inside a card — converting in-card headings (and Tag) is the next batch.',
-    none: 'Put the cursor in a document-level line (a heading/paragraph between cards).',
-  };
-  setEditStatus('live', msg[r] || '');
+  setEditStatus('live', r === 'converted'
+    ? cap + ' applied.'
+    : 'Couldn’t convert here — click into a paragraph, heading, tag, or card line first.');
+}
+function applyTag() {
+  if (!_editHandle) return;
+  setEditStatus('live', _editHandle.setTag() ? 'Tag / card applied.' : 'Couldn’t make a tag here.');
 }
 function clearFormattingFlow() {
   if (!_editHandle) return;
@@ -1456,6 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('head-pocket').onclick = () => applyHeading('pocket');
   $('head-hat').onclick = () => applyHeading('hat');
   $('head-block').onclick = () => applyHeading('block');
+  $('head-tag').onclick = applyTag;
   $('head-clear').onclick = clearFormattingFlow;
   $('fmt-bold').onclick = () => applyFmt('bold');
   $('fmt-italic').onclick = () => applyFmt('italic');

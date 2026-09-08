@@ -20,7 +20,7 @@ import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { createNodeFromLoroObj, LoroUndoPlugin, undo, redo } from 'loro-prosemirror';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../src/schema/index.js';
-import { newHeadingId } from '../../src/schema/ids.js';
+import { setHeading as cmSetHeading, setTag as cmSetTag } from './structural-commands.js';
 import { CollabSession } from '../../src/editor/collab/collab-session.js';
 import { RoomsClient } from '../../src/editor/collab/room-client.js';
 import {
@@ -48,34 +48,16 @@ const EDITOR_PAGE =
   '.pmd-comment-range{background:color-mix(in srgb,#f59e0b 20%,transparent);border-bottom:2px solid #f59e0b}' +
   '</style></head><body><div id="editor" class="pmd-viewer-doc"></div></body></html>';
 
-// Convert the cursor's DOC-LEVEL block to a heading (Pocket/Hat/Block) — the
-// common outline case of CardMirror's setHeading, replicated so we don't bundle
-// the app-coupled ribbon-commands (it pulls the whole editor + card cutter).
-// Only doc-level blocks convert (a no-op INSIDE a card — tag/card-body
-// conversion is card structural surgery, a later batch).
-const DOC_LEVEL_CONVERTIBLE = ['paragraph', 'cite_paragraph', 'undertag', 'card_body', 'pocket', 'hat', 'block'];
+// Heading/tag conversion uses CardMirror's REAL setHeading/setTag, extracted
+// verbatim into structural-commands.ts (ribbon-commands.ts itself can't be
+// bundled — it transitively imports @cardcutter/browser). These handle every
+// case the app does: doc-level blocks, converting/dissolving a card's tag, and
+// splitting a card at a body slot.
 const DOC_HEADINGS = ['pocket', 'hat', 'block'];
-/** Returns a conversion transaction, or null when the cursor's doc-level block
- *  can't become `typeName` (already is, or is inside a card). */
-function headingTr(state: EditorState, typeName: string): Transaction | null {
-  const { $from } = state.selection;
-  const node = $from.depth >= 1 ? $from.node(1) : null; // direct child of doc
-  if (!node || !DOC_LEVEL_CONVERTIBLE.includes(node.type.name) || node.type.name === typeName) return null;
-  const target = schema.nodes[typeName];
-  if (!target) return null;
-  const id = DOC_HEADINGS.includes(node.type.name)
-    ? ((node.attrs['id'] as string | null) ?? newHeadingId())
-    : newHeadingId();
-  return state.tr.setNodeMarkup($from.before(1), target, { id }).scrollIntoView();
-}
-/** Keymap form: converts when possible, ALWAYS claims the key so the browser
- *  doesn't act on F4–F6 (e.g. F5 reload) while the editor is focused. */
-function setDocHeading(typeName: string): Command {
-  return (state, dispatch) => {
-    const tr = headingTr(state, typeName);
-    if (tr && dispatch) dispatch(tr);
-    return true;
-  };
+/** Wrap a structural command so the F-key is ALWAYS claimed (browser default
+ *  suppressed) even when the command can't act at the cursor. */
+function claimKey(cmd: Command): Command {
+  return (state, dispatch, view) => { cmd(state, dispatch, view); return true; };
 }
 
 /** Clear formatting (F12): strip all inline marks across the selection (or the
@@ -134,14 +116,16 @@ export type EditStatus = 'connecting' | 'live' | 'offline' | 'ended' | 'full' | 
 export interface EditCallbacks {
   onStatus: (status: EditStatus, detail?: string) => void;
 }
-export type HeadingResult = 'converted' | 'already' | 'in-card' | 'none';
+export type HeadingResult = 'converted' | 'none';
 export interface EditHandle {
   /** Add an inline comment on the current selection. Returns false if nothing
    *  is selected. The comment syncs to peers through the shared doc. */
   addComment: (text: string) => boolean;
-  /** Convert the cursor's doc-level block to a heading (pocket/hat/block).
-   *  Reports what happened so the UI can explain (e.g. 'in-card'). */
+  /** Convert the cursor's block to a heading (pocket/hat/block) — including
+   *  inside cards (dissolve/split), via CardMirror's real setHeading. */
   setHeading: (typeName: string) => HeadingResult;
+  /** F7 — wrap the current block into a card+tag (CardMirror's setTag). */
+  setTag: () => boolean;
   /** Clear formatting (F12): strip marks + heading→paragraph. */
   clearFormatting: () => boolean;
   /** Toggle an inline mark on the selection (bold/italic/cite_mark/
@@ -209,7 +193,8 @@ export async function mountEditor(
       commentsPlugin,
       keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo }),
       keymap({
-        F4: setDocHeading('pocket'), F5: setDocHeading('hat'), F6: setDocHeading('block'),
+        F4: claimKey(cmSetHeading('pocket')), F5: claimKey(cmSetHeading('hat')),
+        F6: claimKey(cmSetHeading('block')), F7: claimKey(cmSetTag()),
         F12: clearFormattingCmd(),
       }),
       keymap({
@@ -239,16 +224,16 @@ export async function mountEditor(
     hasSelection() { return !!(view && !view.state.selection.empty); },
     setHeading(typeName) {
       if (!view) return 'none';
-      const { $from } = view.state.selection;
-      const node = $from.depth >= 1 ? $from.node(1) : null;
-      if (!node) return 'none';
-      if (node.type.name === typeName) return 'already';
-      if (!DOC_LEVEL_CONVERTIBLE.includes(node.type.name)) return 'in-card';
-      const tr = headingTr(view.state, typeName);
-      if (!tr) return 'none';
-      view.dispatch(tr);
+      const cmd = cmSetHeading(typeName as 'pocket' | 'hat' | 'block');
+      const ran = cmd(view.state, view.dispatch.bind(view), view);
       view.focus();
-      return 'converted';
+      return ran ? 'converted' : 'none';
+    },
+    setTag() {
+      if (!view) return false;
+      const ran = cmSetTag()(view.state, view.dispatch.bind(view), view);
+      view.focus();
+      return ran;
     },
     clearFormatting() {
       if (!view) return false;
