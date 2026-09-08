@@ -346,16 +346,6 @@
         <p class="muted small" id="member-request-status"></p>
       </div>
 
-      <div class="request-box">
-        <div class="sync-title">Student machines <span class="muted small">(for sharing docs)</span></div>
-        <p class="muted small">
-          Captured automatically when a student invites the dashboard. Assign each
-          machine to a student so you can <strong>Share…</strong> a doc to them (a
-          student can have several machines).
-        </p>
-        <div id="machines-list" class="machines-list"><p class="muted small">None captured yet.</p></div>
-      </div>
-
       <div class="config-actions">
         <button id="member-copy" class="btn small" type="button">Copy code</button>
         <button id="member-poll" class="btn small" type="button">Poll for invites now</button>
@@ -385,20 +375,12 @@
         <span style="flex:1"></span>
         <button id="viewer-edit-btn" class="btn ghost small hidden" type="button" title="Experimental: edit this live document">Edit</button>
         <button id="viewer-comments-btn" class="btn ghost small" type="button" title="Show / hide comments">Comments</button>
-        <button id="viewer-share-btn" class="btn ghost small hidden" type="button" title="Share this doc to a student">Share…</button>
         <button id="viewer-note-btn" class="btn ghost small hidden" type="button" title="Send a note to the author">Note</button>
         <button id="viewer-history-btn" class="btn ghost small" type="button" title="Version history">History</button>
         <button id="viewer-docx-btn" class="btn ghost small" type="button" title="Download .docx">.docx</button>
         <button id="viewer-pdf-btn" class="btn ghost small" type="button" title="Print / save as PDF">PDF</button>
         <button id="viewer-live-btn" class="btn small" type="button">● Go live</button>
         <button id="viewer-close" class="btn ghost small" type="button">Close</button>
-      </div>
-      <div id="viewer-share-bar" class="history-bar hidden">
-        <span class="muted small">Share this doc with:</span>
-        <select id="share-target" class="mini-select" aria-label="Share recipient"></select>
-        <button id="share-send" class="btn primary small" type="button">Send invite</button>
-        <button id="share-cancel" class="btn ghost small" type="button">Cancel</button>
-        <span id="share-status" class="muted small"></span>
       </div>
       <div id="viewer-note-bar" class="history-bar hidden">
         <input id="note-text" class="note-input" type="text" placeholder="Note to the author — appears in their CardMirror Receive pill…" />

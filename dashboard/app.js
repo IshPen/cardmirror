@@ -420,120 +420,6 @@ async function pollMemberInvites() {
     await m.pollInvites(config.relay, config.relaytoken);
   } catch { /* file:// or offline — persisted invites still display */ }
   announceNewInvites();
-  harvestMachines();
-}
-
-// ── Machine roster (student ↔ member codes) ──────────────────────────
-// Each student can have several machines. We capture each machine's pairing
-// code from the invites they send the dashboard (KnownRoom.senderCode), auto-
-// linking to a team member by display name; the coach can reassign in the
-// Member panel. This is what lets the coach share a doc to a whole student
-// (all their machines) or one specific machine.
-function machines() { return (config && config.machines) || []; }
-function machinesForStudent(name) {
-  const n = (name || '').toLowerCase();
-  return machines().filter((m) => (m.student || '').toLowerCase() === n);
-}
-function harvestMachines() {
-  if (!config) return;
-  const list = machines().slice();
-  const byCode = new Map(list.map((m) => [m.code, m]));
-  let changed = false;
-  for (const room of Object.values(knownRoomsStore())) {
-    if (!room.senderCode) continue;
-    let m = byCode.get(room.senderCode);
-    if (!m) { m = { code: room.senderCode, name: room.senderName || '', student: '', at: room.at || 0 }; list.push(m); byCode.set(m.code, m); changed = true; }
-    if (room.senderName && m.name !== room.senderName) { m.name = room.senderName; changed = true; }
-    if ((room.at || 0) > (m.at || 0)) { m.at = room.at; changed = true; }
-    if (!m.student && m.name) {
-      const t = team().find((p) => (p.name || '').toLowerCase() === m.name.toLowerCase());
-      if (t) { m.student = t.name; changed = true; }
-    }
-  }
-  if (changed) { config.machines = list; saveConfig(config); }
-}
-function assignMachine(code, student) {
-  const list = machines().slice();
-  const m = list.find((x) => x.code === code);
-  if (m) { m.student = student; config.machines = list; saveConfig(config); }
-}
-
-// Machines list in the Member panel — assign each captured machine to a student.
-function renderMachines() {
-  const el = $('machines-list');
-  if (!el) return;
-  const list = machines();
-  if (!list.length) {
-    el.innerHTML = '<p class="muted small">None captured yet — they appear when a student invites the dashboard.</p>';
-    return;
-  }
-  const students = team().filter((t) => t.role !== 'coach').map((t) => t.name);
-  el.innerHTML = '';
-  for (const m of list.slice().sort((a, b) => (b.at || 0) - (a.at || 0))) {
-    const row = document.createElement('div');
-    row.className = 'machine-row';
-    const label = document.createElement('span');
-    label.className = 'machine-label';
-    label.innerHTML = `${esc(m.name || 'machine')} <span class="room-id">${esc(m.code.slice(5, 15))}…</span>`;
-    const sel = document.createElement('select');
-    sel.className = 'mini-select';
-    sel.innerHTML = '<option value="">— unassigned —</option>' +
-      students.map((s) => `<option${s === m.student ? ' selected' : ''}>${esc(s)}</option>`).join('');
-    sel.onchange = () => assignMachine(m.code, sel.value);
-    row.append(label, sel);
-    el.appendChild(row);
-  }
-}
-
-// ── Share this doc to a student / machine ────────────────────────────
-function fillShareTargets() {
-  const sel = $('share-target');
-  if (!sel) return;
-  const opts = [];
-  for (const t of team()) {
-    if (t.role === 'coach') continue;
-    const ms = machinesForStudent(t.name);
-    if (ms.length) opts.push(`<option value="student:${esc(t.name)}">${esc(t.name)} — ${ms.length} machine${ms.length > 1 ? 's' : ''}</option>`);
-  }
-  const unassigned = machines().filter((m) => !m.student);
-  for (const m of unassigned) {
-    opts.push(`<option value="code:${esc(m.code)}">${esc(m.name || 'machine')} · ${esc(m.code.slice(5, 13))}… (unassigned)</option>`);
-  }
-  sel.innerHTML = opts.length ? opts.join('') : '<option value="">No student machines captured yet</option>';
-  sel.disabled = !opts.length;
-}
-function toggleShareBar() {
-  const bar = $('viewer-share-bar');
-  const show = bar.classList.contains('hidden');
-  if (show) fillShareTargets();
-  bar.classList.toggle('hidden', !show);
-  $('share-status').textContent = '';
-}
-async function sendShare() {
-  const roomId = _viewerRoomId;
-  const kr = roomId && knownRoom(roomId);
-  const status = $('share-status');
-  if (!kr || !kr.keyB64) { status.textContent = 'No key for this doc.'; return; }
-  if (!config.relaytoken) { status.textContent = 'Needs the dashboard relay token (Tokens → Dashboard).'; return; }
-  const val = ($('share-target').value || '');
-  let codes = [];
-  if (val.startsWith('student:')) codes = machinesForStudent(val.slice(8)).map((m) => m.code);
-  else if (val.startsWith('code:')) codes = [val.slice(5)];
-  if (!codes.length) { status.textContent = 'Pick a recipient with at least one machine.'; return; }
-  const btn = $('share-send'); btn.disabled = true; status.textContent = 'Sending…';
-  try {
-    const m = await loadMember();
-    const keyBytes = b64ToBytes(kr.keyB64);
-    const title = kr.title || $('viewer-title').textContent || 'Document';
-    let ok = 0;
-    for (const code of codes) {
-      if (await m.sendRoomInvite(config.relay, config.relaytoken, code, roomId, keyBytes, title, 'Coach')) ok++;
-    }
-    status.textContent = ok
-      ? `Invite sent to ${ok} machine${ok > 1 ? 's' : ''} — it appears in their CardMirror’s Receive pill.`
-      : 'The relay rejected the invite.';
-  } catch (e) { status.textContent = 'Failed: ' + (e.message || e); }
-  finally { btn.disabled = false; }
 }
 
 // Emailable people = team members (name + email) plus roster entries not
@@ -598,8 +484,6 @@ async function showMember() {
   $('member-note').classList.add('hidden');
   $('member-code').textContent = '…';
   fillRequestRecipients();
-  harvestMachines();
-  renderMachines();
   $('member-routing').textContent = '…';
   try {
     const m = await loadMember();
@@ -779,9 +663,6 @@ async function openDoc(roomId) {
   $('viewer-live-btn').textContent = '● Go live';
   // Edit (experimental) needs a key + the dashboard's relay token, same as live.
   $('viewer-edit-btn').classList.toggle('hidden', !canLive);
-  // Share needs a key + relay token (it seals the share code to students).
-  $('viewer-share-btn').classList.toggle('hidden', !canLive);
-  $('viewer-share-bar').classList.add('hidden');
   // "Note" is available when we captured the author's pairing code on invite.
   $('viewer-note-btn').classList.toggle('hidden', !(kr && kr.senderCode && config && config.relaytoken));
   $('viewer-note-bar').classList.add('hidden');
@@ -1664,9 +1545,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const b = $(id); if (b) b.onmousedown = (e) => e.preventDefault();
   }
   $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
-  $('viewer-share-btn').onclick = toggleShareBar;
-  $('share-send').onclick = sendShare;
-  $('share-cancel').onclick = () => $('viewer-share-bar').classList.add('hidden');
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;
   $('note-cancel').onclick = () => $('viewer-note-bar').classList.add('hidden');

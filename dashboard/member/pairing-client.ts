@@ -24,12 +24,8 @@ import {
   webOpen,
   type SealedBundle,
 } from '../../src/editor/pairing/web-pairing-crypto.js';
-import {
-  parseRoomInvite,
-  buildRoomInviteItem,
-  ROOM_INVITE_MIN_VERSION,
-} from '../../src/editor/pairing/room-invite.js';
-import { decodeShareCode, encodeShareCode } from '../../src/editor/collab/collab-crypto.js';
+import { parseRoomInvite } from '../../src/editor/pairing/room-invite.js';
+import { decodeShareCode } from '../../src/editor/collab/collab-crypto.js';
 
 export interface KnownRoom {
   roomId: string;
@@ -156,41 +152,6 @@ export async function sendNote(
       // A ProseMirror slice CardMirror can insert (paragraph of text).
       sliceJson: { content: [{ type: 'paragraph', content: [{ type: 'text', text: String(text) }] }] },
     },
-  };
-  const bundle = await webSeal(inner, recipientPublicCode);
-  const body = { v: 1 as const, recipientCode: await webRoutingId(recipientPublicCode), sentAt: Date.now(), ...bundle };
-  const res = await fetch(`${base}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.ok;
-}
-
-/**
- * Share a room to a student's machine: seals a ROOM INVITE (the share code +
- * title) to their pairing code and posts it to the mailbox. It arrives in
- * their CardMirror as a normal invite → they open the doc. `keyBytes` is the
- * 32-byte room key (the dashboard holds it from having been invited).
- * Returns true when the relay accepted it.
- */
-export async function sendRoomInvite(
-  relayUrl: string,
-  token: string,
-  recipientPublicCode: string,
-  roomId: string,
-  keyBytes: Uint8Array,
-  title: string,
-  senderName = 'Coach',
-): Promise<boolean> {
-  const base = relayUrl.replace(/\/$/, '');
-  const shareCode = encodeShareCode(roomId, keyBytes, ROOM_INVITE_MIN_VERSION);
-  const item = buildRoomInviteItem({ shareCode, title });
-  const inner = {
-    minReceiverVersion: ROOM_INVITE_MIN_VERSION,
-    senderCode: await webOwnPublicCode(),
-    senderName,
-    item,
   };
   const bundle = await webSeal(inner, recipientPublicCode);
   const body = { v: 1 as const, recipientCode: await webRoutingId(recipientPublicCode), sentAt: Date.now(), ...bundle };
