@@ -8,25 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="dot" id="health-dot" title="Relay health"></span>
-      <h1>Debate Relay</h1>
-    </div>
-    <div class="topbar-actions">
-      <button id="theme-btn" class="btn ghost icon-btn" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme">
-        <svg class="ico ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <svg class="ico ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-      </button>
-      <button id="refresh-btn" class="btn" type="button">Refresh</button>
-      <button id="member-btn" class="btn ghost" type="button">Member</button>
-      <button id="tokens-btn" class="btn ghost" type="button">Tokens</button>
-      <button id="settings-btn" class="btn ghost" type="button">Settings</button>
-    </div>
-  </header>
-
-  <!-- New-invite notifications (populated by app.js when a doc is shared) -->
-  <div id="notice-stack" class="notice-stack" aria-live="polite"></div>
+  <!-- Off-canvas / first-run config sits above the app shell -->
 
   <!-- First-run / reconfigure screen -->
   <section id="config-panel" class="config hidden">
@@ -58,7 +40,7 @@
       <label>Roster (optional) — one <code>Name = email</code> per line
         <textarea id="cfg-roster" rows="4" placeholder="Maya = maya@school.edu&#10;Alex = alex@school.edu"></textarea>
         <small class="muted">Maps the names v2 attributes to rooms (owner / created-by / participants)
-          to an email, so the “✉️ Ask for access” button can reach them. Stays in this browser only —
+          to an email, so the “Ask for access” button can reach them. Stays in this browser only —
           never sent to Supabase.</small>
       </label>
       <div class="config-actions">
@@ -68,53 +50,171 @@
     </div>
   </section>
 
-  <!-- Main dashboard -->
-  <main id="dashboard" class="grid hidden">
-
-    <section class="card" id="panel-health">
-      <h2>Health</h2>
-      <div class="health-line">
-        <span class="dot" id="health-dot-lg"></span>
-        <span id="health-text">Checking…</span>
+  <!-- Main app shell: sidebar nav + content views -->
+  <div id="app-shell" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.2L4 17.2V4z"/><path d="M8 9h8M8 12h5"/></svg>
+        </span>
+        <div>
+          <div class="brand-name">Debate Relay</div>
+          <div class="brand-sub"><span class="dot" id="health-dot" title="Relay health"></span> <span id="health-mini">checking…</span></div>
+        </div>
       </div>
-      <p class="muted" id="health-detail"></p>
-    </section>
 
-    <section class="card" id="panel-storage">
-      <h2>Storage</h2>
-      <div class="meter"><div class="meter-fill" id="storage-fill"></div></div>
-      <p id="storage-text" class="muted">Loading…</p>
-      <p id="storage-estimate" class="muted small"></p>
-    </section>
+      <nav class="side-nav" aria-label="Views">
+        <a class="nav-item active" data-view="overview" role="button" tabindex="0">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <span>Overview</span>
+        </a>
+        <a class="nav-item" data-view="sessions" role="button" tabindex="0">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+          <span>Sessions</span>
+        </a>
+        <a class="nav-item" data-view="activity" role="button" tabindex="0">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+          <span>Activity</span>
+        </a>
+        <a class="nav-item" data-view="team" role="button" tabindex="0">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Team</span>
+        </a>
+      </nav>
 
-    <section class="card wide" id="panel-sessions">
-      <div class="card-head">
-        <h2>Sessions</h2>
-        <button id="add-btn" class="btn primary small" type="button">+ Add session</button>
+      <div class="side-foot">
+        <button id="member-btn" class="btn ghost side-btn" type="button">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+          <span>Member</span>
+        </button>
+        <button id="tokens-btn" class="btn ghost side-btn" type="button">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5L20 3M17 6l2 2M14 9l2 2"/></svg>
+          <span>Tokens</span>
+        </button>
+        <button id="settings-btn" class="btn ghost side-btn" type="button">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </button>
       </div>
-      <table class="sessions">
-        <thead>
-          <tr><th>Label</th><th>Owner</th><th>Event</th><th>Created by</th><th>Participants</th><th>Size</th><th>Last activity</th><th>Status</th></tr>
-        </thead>
-        <tbody id="sessions-body">
-          <tr><td colspan="8" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
-      <p class="muted small" id="sessions-note"></p>
-    </section>
+    </aside>
 
-    <section class="card wide" id="panel-stale">
-      <h2>Stale — approaching 7-day idle deletion</h2>
-      <table class="stale">
-        <thead>
-          <tr><th>Label / Room</th><th>Idle for</th><th>Days remaining</th></tr>
-        </thead>
-        <tbody id="stale-body">
-          <tr><td colspan="3" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
-    </section>
-  </main>
+    <main class="content">
+      <header class="content-head">
+        <h1 id="view-title">Overview</h1>
+        <div class="head-actions">
+          <button id="theme-btn" class="btn ghost icon-btn" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme">
+            <svg class="ico ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="ico ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          </button>
+          <button id="refresh-btn" class="btn" type="button">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="notice-stack" class="notice-stack" aria-live="polite"></div>
+
+      <!-- OVERVIEW -->
+      <section class="view active" data-view="overview">
+        <div class="stat-row">
+          <div class="stat"><div class="stat-label">Live sessions</div><div class="stat-num num" id="stat-live">—</div></div>
+          <div class="stat"><div class="stat-label">Online now</div><div class="stat-num num" id="stat-online">—</div></div>
+          <div class="stat"><div class="stat-label">Total rooms</div><div class="stat-num num" id="stat-rooms">—</div></div>
+          <div class="stat"><div class="stat-label">Storage used</div><div class="stat-num num" id="stat-storage">—</div></div>
+        </div>
+        <div class="grid2">
+          <section class="card" id="panel-health">
+            <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Relay health</h2></div>
+            <div class="health-line">
+              <span class="dot" id="health-dot-lg"></span>
+              <span id="health-text">Checking…</span>
+            </div>
+            <p class="muted small" id="health-detail"></p>
+          </section>
+
+          <section class="card" id="panel-storage">
+            <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg> Storage</h2></div>
+            <div class="meter"><div class="meter-fill" id="storage-fill"></div></div>
+            <p id="storage-text" class="muted">Loading…</p>
+            <p id="storage-estimate" class="muted small"></p>
+          </section>
+        </div>
+        <section class="card wide" id="panel-presence">
+          <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14 0M8.5 16.11a6 6 0 0 1 7 0M12 20h.01"/></svg> Who's online now</h2></div>
+          <div id="presence-list" class="presence-list"><span class="muted small">Loading…</span></div>
+        </section>
+      </section>
+
+      <!-- SESSIONS -->
+      <section class="view" data-view="sessions">
+        <section class="card wide" id="panel-sessions">
+          <div class="card-head">
+            <h2>Sessions</h2>
+            <button id="add-btn" class="btn primary small" type="button">+ Add session</button>
+          </div>
+          <div class="table-wrap">
+            <table class="sessions">
+              <thead>
+                <tr><th>Label</th><th>Owner</th><th>Event</th><th>Created by</th><th>Participants</th><th>Size</th><th>Last activity</th><th>Status</th></tr>
+              </thead>
+              <tbody id="sessions-body">
+                <tr><td colspan="8" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted small" id="sessions-note"></p>
+        </section>
+
+        <section class="card wide" id="panel-stale">
+          <div class="card-head"><h2>Stale — approaching 7-day idle deletion</h2></div>
+          <div class="table-wrap">
+            <table class="stale">
+              <thead>
+                <tr><th>Label / Room</th><th>Idle for</th><th>Days remaining</th><th></th></tr>
+              </thead>
+              <tbody id="stale-body">
+                <tr><td colspan="4" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- ACTIVITY -->
+      <section class="view" data-view="activity">
+        <section class="card wide" id="panel-heatmap">
+          <div class="card-head"><h2>Activity heatmap <span class="muted small">— last 8 weeks, by day</span></h2></div>
+          <div id="heatmap" class="heatmap"><span class="muted small">Loading…</span></div>
+        </section>
+        <section class="card wide" id="panel-feed">
+          <div class="card-head"><h2>Activity feed</h2></div>
+          <ul id="activity-feed" class="feed"><li class="muted small">Loading…</li></ul>
+        </section>
+      </section>
+
+      <!-- TEAM -->
+      <section class="view" data-view="team">
+        <section class="card wide" id="panel-team">
+          <div class="card-head">
+            <h2>Team</h2>
+            <select id="team-group-filter" class="mini-select" aria-label="Filter by group"><option value="">All groups</option></select>
+          </div>
+          <div class="table-wrap">
+            <table class="team-table">
+              <thead>
+                <tr><th>Member</th><th>Group</th><th>Rooms created</th><th>In sessions</th><th>Storage</th><th>Last active</th><th>Status</th></tr>
+              </thead>
+              <tbody id="team-view-body">
+                <tr><td colspan="7" class="muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted small">Groups are set in the Tokens panel (each member's group tag). Attribution needs per-person tokens.</p>
+        </section>
+      </section>
+    </main>
+  </div>
 
   <!-- Add-session modal -->
   <div id="add-modal" class="modal hidden">
@@ -162,9 +262,9 @@
       </p>
       <table class="team">
         <thead>
-          <tr><th>Name</th><th>Email</th><th>Role</th><th>Token</th><th></th></tr>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th>Group</th><th>Token</th><th></th></tr>
         </thead>
-        <tbody id="team-body"><tr><td colspan="5" class="muted">No one added yet.</td></tr></tbody>
+        <tbody id="team-body"><tr><td colspan="6" class="muted">No one added yet.</td></tr></tbody>
       </table>
       <div class="row">
         <label>Name <span class="req">*</span>
@@ -172,6 +272,10 @@
         </label>
         <label>Email
           <input id="tk-email" type="email" placeholder="zayn@school.edu" />
+        </label>
+        <label>Group
+          <input id="tk-group" type="text" placeholder="Varsity" list="tk-group-list" />
+          <datalist id="tk-group-list"></datalist>
         </label>
         <label>Role
           <select id="tk-role">

@@ -84,9 +84,11 @@ async function sbInsert(table, row) {
 
 // ── Health ───────────────────────────────────────────────────────────
 async function refreshHealth() {
-  const setDot = (cls) => { for (const el of [$('health-dot'), $('health-dot-lg')]) { el.className = 'dot ' + cls; } };
+  const setDot = (cls) => { for (const el of [$('health-dot'), $('health-dot-lg')]) { if (el) el.className = 'dot ' + cls; } };
+  const setMini = (t) => { const m = $('health-mini'); if (m) m.textContent = t; };
   $('health-text').textContent = 'Checking…';
   $('health-detail').textContent = '';
+  setMini('checking…');
   try {
     const base = config.relay.replace(/\/$/, '');
     const t0 = performance.now();
@@ -97,16 +99,19 @@ async function refreshHealth() {
       setDot('ok');
       $('health-text').textContent = 'Relay is up';
       $('health-detail').textContent = `${base}/health · responded in ${ms} ms`;
+      setMini(`up · ${ms} ms`);
     } else {
       setDot('bad');
       $('health-text').textContent = 'Relay responded, but not healthy';
       $('health-detail').textContent = `HTTP ${res.status}`;
+      setMini(`HTTP ${res.status}`);
     }
   } catch (e) {
     setDot('bad');
     $('health-text').textContent = 'Relay is unreachable';
     $('health-detail').textContent = String(e.message || e) +
       ' — if it was idle, Render may be waking it (~60s). Try Refresh.';
+    setMini('unreachable');
   }
 }
 
@@ -138,9 +143,194 @@ async function refreshData() {
   } catch { /* pre-v2 relay: no participants read-model yet */ }
 
   const byId = new Map(rooms.map((r) => [r.id, r]));
+  _lastData = { rooms, registry, partsByRoom };
   renderSessions(registry, byId, partsByRoom);
   renderStale(rooms, registry);
   renderStorage(rooms);
+  renderStats(rooms, partsByRoom);
+  renderPresence(rooms, registry, partsByRoom);
+  renderActivityFeed(rooms, registry, partsByRoom);
+  renderHeatmap(rooms);
+  renderTeamView(rooms, registry, partsByRoom);
+}
+let _lastData = null;
+
+// ── Monitoring: shared helpers ───────────────────────────────────────
+function liveRooms(rooms) { return rooms.filter((r) => !r.tombstoned); }
+function isLive(room) {
+  return !room.tombstoned && daysSince(parseUtc(room.last_activity)) < IDLE_GC_DAYS;
+}
+// Distinct people currently connected (across all live rooms).
+function onlineNames(partsByRoom) {
+  const set = new Set();
+  for (const list of partsByRoom.values()) for (const n of list) if (n && n !== 'anon') set.add(n);
+  return [...set];
+}
+// group tag for a member name, from the Tokens-panel team list.
+function groupOf(name) {
+  if (!name) return '';
+  const m = team().find((t) => (t.name || '').toLowerCase() === name.toLowerCase());
+  return (m && m.group) || '';
+}
+
+function renderStats(rooms, partsByRoom) {
+  const live = liveRooms(rooms).filter(isLive);
+  const bytes = liveRooms(rooms).reduce((s, r) => s + (r.bytes_used || 0), 0);
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('stat-live', live.length);
+  set('stat-online', onlineNames(partsByRoom).length);
+  set('stat-rooms', liveRooms(rooms).length);
+  set('stat-storage', fmtBytes(bytes * DB_MULTIPLIER));
+}
+
+// Who's online now — chips grouped by person, showing which rooms they're in.
+function renderPresence(rooms, registry, partsByRoom) {
+  const el = $('presence-list');
+  if (!el) return;
+  const labelOf = new Map(registry.map((r) => [r.room_id, r.label]));
+  // person → set of room labels they're connected to
+  const byPerson = new Map();
+  for (const [roomId, list] of partsByRoom) {
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room || !isLive(room)) continue;
+    const where = labelOf.get(roomId) || (roomId.slice(0, 8) + '…');
+    for (const n of list) {
+      const name = n || 'anon';
+      if (!byPerson.has(name)) byPerson.set(name, new Set());
+      byPerson.get(name).add(where);
+    }
+  }
+  if (!byPerson.size) {
+    el.innerHTML = '<span class="muted small">Nobody is connected to a session right now.</span>';
+    return;
+  }
+  el.innerHTML = [...byPerson.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, rooms2]) =>
+      `<span class="chip"><span class="dot ok"></span>${esc(name)}` +
+      `<span class="chip-sub">${rooms2.size === 1 ? esc([...rooms2][0]) : rooms2.size + ' sessions'}</span></span>`)
+    .join('');
+}
+
+// Activity feed — recent room events (created + last active) newest first.
+function renderActivityFeed(rooms, registry, partsByRoom) {
+  const el = $('activity-feed');
+  if (!el) return;
+  const labelOf = new Map(registry.map((r) => [r.room_id, r.label]));
+  const nameFor = (r) => labelOf.get(r.id) || (r.id.slice(0, 8) + '…');
+  const events = [];
+  for (const r of rooms) {
+    if (r.tombstoned) continue;
+    if (r.created_at) {
+      events.push({ t: parseUtc(r.created_at), kind: 'created',
+        html: `<strong>${esc(r.created_by || 'Someone')}</strong> started <strong>${esc(nameFor(r))}</strong>` });
+    }
+    if (r.last_activity && r.last_activity !== r.created_at) {
+      const live = isLive(r);
+      const parts = partsByRoom.get(r.id) || [];
+      events.push({ t: parseUtc(r.last_activity), kind: live ? 'live' : 'idle',
+        html: `<strong>${esc(nameFor(r))}</strong> ${live ? 'was active' : 'went idle'}` +
+          (live && parts.length ? ` · ${esc(parts.join(', '))} connected` : '') });
+    }
+  }
+  events.sort((a, b) => (b.t ? b.t.getTime() : 0) - (a.t ? a.t.getTime() : 0));
+  const top = events.slice(0, 40);
+  if (!top.length) { el.innerHTML = '<li class="muted small">No activity yet.</li>'; return; }
+  el.innerHTML = top.map((e) => {
+    const dot = e.kind === 'live' ? 'live' : e.kind === 'idle' ? 'warn' : '';
+    return `<li><span class="feed-when">${esc(fmtAgo(e.t))}</span>` +
+      `<span class="feed-dot ${dot}"></span><span>${e.html}</span></li>`;
+  }).join('');
+}
+
+// Activity heatmap — 8 weeks × 7 days, shaded by room-activity count per day.
+function renderHeatmap(rooms) {
+  const el = $('heatmap');
+  if (!el) return;
+  const DAY = 86400000;
+  const now = Date.now();
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const start = today.getTime() - 55 * DAY; // 8 weeks back, aligned below
+  const counts = new Map(); // dayIndex (0..55) → count
+  const bump = (ts) => {
+    if (!ts) return;
+    const d = ts.getTime();
+    if (d < start || d > now) return;
+    const idx = Math.floor((d - start) / DAY);
+    counts.set(idx, (counts.get(idx) || 0) + 1);
+  };
+  for (const r of rooms) { bump(parseUtc(r.created_at)); if (r.last_activity !== r.created_at) bump(parseUtc(r.last_activity)); }
+  const max = Math.max(1, ...counts.values());
+  const level = (c) => (!c ? '' : c >= max * 0.75 ? 'h4' : c >= max * 0.5 ? 'h3' : c >= max * 0.25 ? 'h2' : 'h1');
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // 8 columns (weeks) × 7 rows (days). start aligned to Monday.
+  const startDow = (new Date(start).getDay() + 6) % 7; // 0=Mon
+  let html = '';
+  for (let row = 0; row < 7; row++) {
+    html += `<div class="heat-row"><span class="heat-label">${DOW[row]}</span>`;
+    for (let col = 0; col < 8; col++) {
+      const idx = col * 7 + row - startDow;
+      const c = idx >= 0 && idx <= 55 ? (counts.get(idx) || 0) : -1;
+      const title = c < 0 ? '' : `${c} event${c === 1 ? '' : 's'}`;
+      html += `<span class="heat-cell ${c < 0 ? '' : level(c)}" title="${title}"></span>`;
+    }
+    html += '</div>';
+  }
+  html += '<div class="heat-legend">Less <span class="heat-cell"></span><span class="heat-cell h1"></span>' +
+    '<span class="heat-cell h2"></span><span class="heat-cell h3"></span><span class="heat-cell h4"></span> More</div>';
+  el.innerHTML = html;
+}
+
+// Per-member view — aggregates attribution (created_by + live participants).
+function renderTeamView(rooms, registry, partsByRoom) {
+  const body = $('team-view-body');
+  if (!body) return;
+  const stats = new Map(); // name → {created, inSessions:Set, bytes, last, online}
+  const get = (name) => {
+    if (!stats.has(name)) stats.set(name, { created: 0, inSessions: new Set(), bytes: 0, last: null, online: false });
+    return stats.get(name);
+  };
+  const touch = (s, t) => { const d = parseUtc(t); if (d && (!s.last || d > s.last)) s.last = d; };
+  for (const r of rooms) {
+    if (r.tombstoned) continue;
+    if (r.created_by) { const s = get(r.created_by); s.created++; s.bytes += r.bytes_used || 0; touch(s, r.last_activity || r.created_at); }
+  }
+  for (const [roomId, list] of partsByRoom) {
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room || !isLive(room)) continue;
+    for (const n of list) { if (!n || n === 'anon') continue; const s = get(n); s.inSessions.add(roomId); s.online = true; touch(s, room.last_activity); }
+  }
+  // include roster/team members with no attribution yet
+  for (const m of team()) if (m.name && m.role !== 'coach') get(m.name);
+
+  // group filter options
+  const groups = [...new Set(team().map((m) => m.group).filter(Boolean))].sort();
+  const sel = $('team-group-filter');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All groups</option>' + groups.map((g) => `<option${g === cur ? ' selected' : ''}>${esc(g)}</option>`).join('');
+  }
+  const filter = (sel && sel.value) || '';
+
+  const rowsArr = [...stats.entries()]
+    .filter(([name]) => !filter || groupOf(name) === filter)
+    .sort((a, b) => (b[1].online - a[1].online) || (b[1].created - a[1].created) || a[0].localeCompare(b[0]));
+  if (!rowsArr.length) {
+    body.innerHTML = '<tr><td colspan="7" class="muted">No attributed members yet. Per-person tokens (Tokens panel) label who created/joined each room.</td></tr>';
+    return;
+  }
+  body.innerHTML = rowsArr.map(([name, s]) => {
+    const g = groupOf(name);
+    return `<tr>
+      <td><strong>${esc(name)}</strong></td>
+      <td>${g ? `<span class="group-badge">${esc(g)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="num">${s.created}</td>
+      <td class="num">${s.inSessions.size || '—'}</td>
+      <td class="num">${s.bytes ? fmtBytes(s.bytes) : '—'}</td>
+      <td>${s.last ? esc(fmtAgo(s.last)) : '<span class="muted">—</span>'}</td>
+      <td>${s.online ? '<span class="status-live">● online</span>' : '<span class="status-dead">offline</span>'}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Path B (member invites) + doc viewer ─────────────────────────────
@@ -642,19 +832,39 @@ function renderStale(rooms, registry) {
     .filter((x) => x.remaining <= STALE_DAYS)
     .sort((a, b) => a.remaining - b.remaining);
 
+  const ownerOf = new Map(registry.map((r) => [r.room_id, r.owner]));
   const body = $('stale-body');
   if (!stale.length) {
-    body.innerHTML = '<tr><td colspan="3" class="muted">Nothing approaching deletion. 🎉</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="muted">Nothing approaching deletion.</td></tr>';
     return;
   }
+  const roster = rosterMap();
   body.innerHTML = stale.map(({ r, remaining }) => {
     const idle = IDLE_GC_DAYS - remaining;
     const cls = remaining <= 1 ? 'status-warn' : '';
-    const name = labelOf.get(r.id) || `<span class="room-id">${esc(r.id.slice(0, 8))}… (unregistered)</span>`;
+    const label = labelOf.get(r.id);
+    const name = label
+      ? esc(label)
+      : `<span class="room-id">${esc(r.id.slice(0, 8))}… (unregistered)</span>`;
+    // Nudge: email whoever owns/created it, if we have their address.
+    const person = ownerOf.get(r.id) || r.created_by;
+    const known = person && roster.get(String(person).toLowerCase());
+    let nudge = '';
+    if (known) {
+      const subject = `CardMirror: “${label || 'your session'}” is about to be auto-deleted`;
+      const daysTxt = remaining <= 0 ? 'today' : `in ~${remaining.toFixed(0)} day(s)`;
+      const bodyTxt = `Hi ${known.name},\n\nYour session “${label || r.id.slice(0, 8)}” has been idle and the relay ` +
+        `will auto-delete it ${daysTxt}. Open it in CardMirror (or end it) to keep or clear it.\n\nThanks!`;
+      const href = `mailto:${known.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyTxt)}`;
+      nudge = `<a class="btn-ask" href="${esc(href)}" title="Email ${esc(known.name)}">Remind</a>`;
+    } else if (person) {
+      nudge = `<a class="btn-ask disabled" title="No email on file for ${esc(person)} — add in Settings → Roster">Remind</a>`;
+    }
     return `<tr>
-      <td>${labelOf.has(r.id) ? esc(labelOf.get(r.id)) : name}</td>
+      <td>${name}</td>
       <td>${idle.toFixed(1)} days</td>
       <td class="${cls}">${remaining <= 0 ? 'due now' : remaining.toFixed(1) + ' days'}</td>
+      <td>${nudge}</td>
     </tr>`;
   }).join('');
 }
@@ -809,14 +1019,19 @@ async function syncTokensToRelay() {
 function renderTeam() {
   const body = $('team-body');
   const list = team();
+  // Keep the group autocomplete fresh from existing groups.
+  const dl = $('tk-group-list');
+  if (dl) dl.innerHTML = [...new Set(list.map((p) => p.group).filter(Boolean))].sort()
+    .map((g) => `<option value="${esc(g)}">`).join('');
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="5" class="muted">No one added yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="muted">No one added yet.</td></tr>';
     return;
   }
   body.innerHTML = list.map((p, i) => `<tr>
     <td>${esc(p.name)}</td>
     <td>${esc(p.email) || '—'}</td>
     <td>${esc(p.role)}</td>
+    <td>${p.group ? `<span class="group-badge">${esc(p.group)}</span>` : '<span class="muted">—</span>'}</td>
     <td class="mono">${esc(p.token.slice(0, 22))}…</td>
     <td><a class="btn-ask" data-cp="${i}">copy</a> <a class="btn-ask" data-rm="${i}">remove</a></td>
   </tr>`).join('');
@@ -837,12 +1052,13 @@ function addPerson() {
   const name = $('tk-name').value.trim();
   const email = $('tk-email').value.trim();
   const role = $('tk-role').value;
+  const group = ($('tk-group') && $('tk-group').value.trim()) || '';
   if (!name) { err.textContent = 'Name is required.'; err.classList.remove('hidden'); return; }
   if (team().some((p) => p.name.toLowerCase() === name.toLowerCase())) {
     err.textContent = 'Someone with that name is already on the list.'; err.classList.remove('hidden'); return;
   }
-  persistTeam([...team(), { name, email, role, token: genToken(name) }]);
-  $('tk-name').value = ''; $('tk-email').value = '';
+  persistTeam([...team(), { name, email, role, group, token: genToken(name) }]);
+  $('tk-name').value = ''; $('tk-email').value = ''; if ($('tk-group')) $('tk-group').value = '';
   renderTeam();
   $('tk-status').textContent = 'Added. Copy RELAY_TOKENS and paste it into Render to apply.';
 }
@@ -875,12 +1091,28 @@ function showConfig() {
     $('cfg-relaytoken').value = config.relaytoken || '';
     $('cfg-roster').value = config.roster || '';
   }
-  $('dashboard').classList.add('hidden');
+  $('app-shell').classList.add('hidden');
   $('config-panel').classList.remove('hidden');
 }
 function showDashboard() {
   $('config-panel').classList.add('hidden');
-  $('dashboard').classList.remove('hidden');
+  $('app-shell').classList.remove('hidden');
+}
+
+// Sidebar view switching. Each .nav-item[data-view] reveals the matching
+// .view[data-view]; content is always in the DOM (rendering is unaffected).
+const VIEW_TITLES = { overview: 'Overview', sessions: 'Sessions', activity: 'Activity', team: 'Team' };
+function switchView(view) {
+  for (const el of document.querySelectorAll('.nav-item')) el.classList.toggle('active', el.dataset.view === view);
+  for (const el of document.querySelectorAll('.view')) el.classList.toggle('active', el.dataset.view === view);
+  const title = $('view-title');
+  if (title) title.textContent = VIEW_TITLES[view] || 'Dashboard';
+}
+function wireNav() {
+  for (const el of document.querySelectorAll('.nav-item')) {
+    el.onclick = () => switchView(el.dataset.view);
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchView(el.dataset.view); } };
+  }
 }
 
 async function refreshAll() {
@@ -911,6 +1143,9 @@ initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
   $('theme-btn').onclick = toggleTheme;
+  wireNav();
+  const gf = $('team-group-filter');
+  if (gf) gf.onchange = () => { if (_lastData) renderTeamView(_lastData.rooms, _lastData.registry, _lastData.partsByRoom); };
   $('settings-btn').onclick = showConfig;
   $('refresh-btn').onclick = refreshAll;
   $('tokens-btn').onclick = openTokens;
