@@ -18,7 +18,7 @@
  * Everything else is copied byte-for-byte from the source to preserve behavior.
  */
 
-import { Fragment, type Node as PMNode, type ResolvedPos, type MarkType } from 'prosemirror-model';
+import { Fragment, type Node as PMNode, type ResolvedPos, type MarkType, type Mark } from 'prosemirror-model';
 import {
   Selection,
   TextSelection,
@@ -1044,4 +1044,364 @@ function asTransformed(child: PMNode, opts: StructuralMode): PMNode {
   }
   const a = schema.nodes['analytic']!.create({ id }, cleanContent);
   return schema.nodes['analytic_unit']!.create(null, [a]);
+}
+
+// ---- F12 "clear to plain text" ----
+//
+// Mark sets:
+//   - Demote/full: strip font_size, font_color, font_family, bold,
+//     italic, strikethrough. Keep highlight, shading, named-style
+//     marks (cite_mark / underline_mark / emphasis_mark / undertag_mark
+//     / analytic_mark), link, pilcrow_marker. Also convert
+//     `underline_direct` → `underline_mark` so direct underlining
+//     survives the demotion as the body-valid variant.
+//   - Partial: strip the above plus `underline_direct` AND all named-
+//     style marks — partial is "clear character formatting" in the
+//     Verbatim sense; only highlight/shading are exempted.
+
+const F12_STRIP_DIRECT_NAMES = [
+  'font_size',
+  'font_color',
+  'font_family',
+  'bold',
+  'italic',
+  'strikethrough',
+] as const;
+
+const F12_STRIP_PARTIAL_NAMES = [
+  ...F12_STRIP_DIRECT_NAMES,
+  'underline_direct',
+  'cite_mark',
+  'underline_mark',
+  'emphasis_mark',
+  'undertag_mark',
+  'analytic_mark',
+] as const;
+
+function stripMarkNamesOnTr(
+  tr: Transaction,
+  from: number,
+  to: number,
+  names: readonly string[],
+): void {
+  for (const name of names) {
+    const mt = schema.marks[name];
+    if (mt) tr.removeMark(from, to, mt);
+  }
+}
+
+function convertUnderlineDirectToMarkOnTr(
+  tr: Transaction,
+  from: number,
+  to: number,
+  doc: PMNode,
+): void {
+  const directType = schema.marks['underline_direct'];
+  const markType = schema.marks['underline_mark'];
+  if (!directType || !markType) return;
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return true;
+    if (!node.marks.some((m) => m.type === directType)) return true;
+    const start = Math.max(from, pos);
+    const end = Math.min(to, pos + node.nodeSize);
+    if (start >= end) return true;
+    tr.removeMark(start, end, directType);
+    tr.addMark(start, end, markType.create());
+    return true;
+  });
+}
+
+function cleanFragmentForClearToNormal(
+  fragment: Fragment,
+  mode: 'cursor' | 'full',
+): Fragment {
+  const stripNames = mode === 'cursor' ? F12_STRIP_DIRECT_NAMES : F12_STRIP_PARTIAL_NAMES;
+  const stripSet = new Set<string>(stripNames);
+  const convertUnderlineDirect = mode === 'cursor';
+  const directType = schema.marks['underline_direct'];
+  const markType = schema.marks['underline_mark'];
+  const out: PMNode[] = [];
+  fragment.forEach((child) => {
+    if (!child.isText) {
+      out.push(child);
+      return;
+    }
+    let newMarks: readonly Mark[] = child.marks.filter((m) => !stripSet.has(m.type.name));
+    if (convertUnderlineDirect && directType && markType) {
+      if (newMarks.some((m) => m.type === directType)) {
+        newMarks = newMarks.filter((m) => m.type !== directType);
+        if (!newMarks.some((m) => m.type === markType)) {
+          newMarks = markType.create().addToSet(newMarks);
+        }
+      }
+    }
+    out.push(child.mark(newMarks));
+  });
+  return Fragment.fromArray(out);
+}
+
+interface ClearToNormalOp {
+  nodeStart: number;
+  nodeSize: number;
+  typeName: string;
+  /** Depth of the textblock in the original doc. */
+  depth: number;
+  /** `cursor` = empty selection at this paragraph; `full` = non-empty
+   *  selection covers it end-to-end; `partial` = sub-range coverage. */
+  mode: 'cursor' | 'full' | 'partial';
+  partialFrom?: number;
+  partialTo?: number;
+}
+
+/**
+ * Shadow-selection ranges for formatting. STUBBED for the dashboard
+ * viewer: there is no right-click "select similar" shadow selection
+ * here, so the collapsed-selection branch in `clearToNormal` that
+ * consults this never fires.
+ */
+function getOperatingRangesForFormatting(): {
+  fromShadow: false;
+  ranges: { from: number; to: number }[];
+} {
+  return { fromShadow: false as const, ranges: [] as { from: number; to: number }[] };
+}
+
+export function clearToNormal(): Command {
+  return (state, dispatch) => {
+    const sel = state.selection;
+    const isEmpty = sel.empty;
+
+    // Shadow-selection path: when the PM selection is collapsed and
+    // shadow matches are active, treat each match as a partial-mode
+    // strip across its range. Structural demotes (cursor / full)
+    // don't apply — the user picked specific runs to clean, not
+    // whole paragraphs.
+    if (isEmpty) {
+      const shadowOp = getOperatingRangesForFormatting();
+      if (shadowOp.fromShadow && shadowOp.ranges.length > 0) {
+        if (!dispatch) return true;
+        const tr = state.tr;
+        for (const { from, to } of shadowOp.ranges) {
+          applyClearToNormalPartial(tr, from, to);
+        }
+        dispatch(tr);
+        return true;
+      }
+    }
+
+    const ops: ClearToNormalOp[] = [];
+    state.doc.nodesBetween(sel.from, sel.to, (node, pos) => {
+      if (!node.isTextblock) return true;
+      const contentFrom = pos + 1;
+      const contentTo = pos + node.nodeSize - 1;
+      const $pos = state.doc.resolve(pos + 1);
+      let mode: 'cursor' | 'full' | 'partial';
+      if (isEmpty) {
+        mode = 'cursor';
+      } else if (sel.from <= contentFrom && sel.to >= contentTo) {
+        mode = 'full';
+      } else {
+        mode = 'partial';
+      }
+      ops.push({
+        nodeStart: pos,
+        nodeSize: node.nodeSize,
+        typeName: node.type.name,
+        depth: $pos.depth,
+        mode,
+        partialFrom: mode === 'partial' ? Math.max(sel.from, contentFrom) : undefined,
+        partialTo: mode === 'partial' ? Math.min(sel.to, contentTo) : undefined,
+      });
+      return false;
+    });
+
+    if (ops.length === 0) return false;
+    if (!dispatch) return true;
+
+    // Apply in reverse position order so earlier positions stay
+    // stable through any dissolves (which can shrink the doc).
+    const tr = state.tr;
+    for (let i = ops.length - 1; i >= 0; i--) {
+      const op = ops[i]!;
+      if (op.mode === 'cursor' || op.mode === 'full') {
+        applyClearToNormalDemote(tr, op);
+      } else if (op.partialFrom != null && op.partialTo != null) {
+        applyClearToNormalPartial(tr, op.partialFrom, op.partialTo);
+      }
+    }
+
+    dispatch(tr);
+    return true;
+  };
+}
+
+/** Demote-and-strip path. Used for both `cursor` and `full` modes;
+ *  the strip set + underline_direct handling differ:
+ *    - cursor: keep named-style marks, convert underline_direct →
+ *      underline_mark (so direct underlining survives the demotion).
+ *    - full (entire paragraph in a non-empty selection): strip
+ *      everything the partial-coverage path would, then demote on
+ *      top of it. "Both behaviors at once."
+ */
+function applyClearToNormalDemote(tr: Transaction, op: ClearToNormalOp): void {
+  const { nodeStart, nodeSize, typeName, depth, mode } = op;
+  const contentFrom = nodeStart + 1;
+  const contentTo = nodeStart + nodeSize - 1;
+  const fragmentMode: 'cursor' | 'full' = mode === 'cursor' ? 'cursor' : 'full';
+  const stripNames =
+    fragmentMode === 'cursor' ? F12_STRIP_DIRECT_NAMES : F12_STRIP_PARTIAL_NAMES;
+
+  let target: 'paragraph' | 'card_body' | null = null;
+  let needDissolve = false;
+  switch (typeName) {
+    case 'pocket':
+    case 'hat':
+    case 'block':
+      target = 'paragraph';
+      break;
+    case 'tag':
+    case 'analytic':
+      target = 'paragraph';
+      needDissolve = true;
+      break;
+    case 'undertag':
+      target = depth === 1 ? 'paragraph' : 'card_body';
+      break;
+    case 'cite_paragraph':
+    case 'card_body':
+    case 'paragraph':
+      target = null;
+      break;
+    default:
+      target = null;
+  }
+
+  if (needDissolve) {
+    // Dissolve card / analytic_unit. The head's cleaned content
+    // becomes a doc-level paragraph; trailing children lift out.
+    const $head = tr.doc.resolve(contentFrom);
+    const containerDepth = $head.depth - 1;
+    if (containerDepth < 1) return;
+    const container = $head.node(containerDepth);
+    const containerStart = $head.before(containerDepth);
+    if (container.firstChild !== $head.parent) return;
+
+    const cleanedHead = cleanFragmentForClearToNormal(
+      container.firstChild.content,
+      fragmentMode,
+    );
+    const newPara = schema.nodes['paragraph']!.create(null, cleanedHead);
+    const lifted: PMNode[] = [newPara];
+    container.forEach((child, _off, index) => {
+      if (index === 0) return;
+      lifted.push(liftCardChild(child));
+    });
+
+    // Capture the selection endpoints' logical position inside
+    // the container BEFORE the replaceWith so we can re-anchor
+    // after. PM's default `ReplaceStep` mapping pushes any
+    // position inside the replaced range to the END of the
+    // replacement (assoc=1 — the right-association convention),
+    // which lands the cursor at the tail of the lifted bodies
+    // — and if absorb claims those bodies into a preceding card,
+    // the cursor follows them to the bottom of that card. A
+    // manual setSelection is the only fix: dissolve replaces the
+    // very container that holds the cursor, so there's no
+    // surrounding region whose mapping could preserve it.
+    const containerEnd = containerStart + container.nodeSize;
+    const origHead = tr.selection.head;
+    const origAnchor = tr.selection.anchor;
+    const mappedHead = mapPosThroughDissolve(origHead, containerStart, containerEnd, container, lifted);
+    const mappedAnchor = origAnchor === origHead
+      ? mappedHead
+      : mapPosThroughDissolve(origAnchor, containerStart, containerEnd, container, lifted);
+
+    tr.replaceWith(containerStart, containerEnd, Fragment.fromArray(lifted));
+
+    if (mappedHead != null) {
+      const $newHead = tr.doc.resolve(mappedHead);
+      const $newAnchor = mappedAnchor != null ? tr.doc.resolve(mappedAnchor) : $newHead;
+      tr.setSelection(TextSelection.between($newAnchor, $newHead));
+    }
+    return;
+  }
+
+  // Non-dissolve: strip + (conditionally) convert in place, then
+  // change type if needed.
+  stripMarkNamesOnTr(tr, contentFrom, contentTo, stripNames);
+  if (fragmentMode === 'cursor') {
+    convertUnderlineDirectToMarkOnTr(tr, contentFrom, contentTo, tr.doc);
+  }
+  if (target !== null && target !== typeName) {
+    tr.setNodeMarkup(nodeStart, schema.nodes[target]!);
+  }
+}
+
+function applyClearToNormalPartial(tr: Transaction, from: number, to: number): void {
+  stripMarkNamesOnTr(tr, from, to, F12_STRIP_PARTIAL_NAMES);
+}
+
+/** Map a doc-position that falls inside a card / analytic_unit being
+ *  dissolved by `applyClearToNormalDemote` to its logical equivalent
+ *  in the lifted (post-replace) structure. Returns `null` for
+ *  positions outside the container — those are handled correctly by
+ *  PM's automatic size-delta mapping.
+ *
+ *  The lifted structure is `[paragraph(cleanedHead), ...lifted
+ *  bodies]` inserted in place of the container. Each lifted body is
+ *  the result of `liftCardChild` (card_body / cite_paragraph →
+ *  paragraph, undertag → undertag, analytic → analytic_unit-wrapped).
+ *  The `analytic_unit` wrap adds one extra opening boundary, which
+ *  this function accounts for.
+ */
+function mapPosThroughDissolve(
+  orig: number,
+  containerStart: number,
+  containerEnd: number,
+  container: PMNode,
+  lifted: readonly PMNode[],
+): number | null {
+  if (orig <= containerStart || orig >= containerEnd) return null;
+
+  // Walk children to find which one the position was in and its
+  // offset within that child's content.
+  let walkPos = containerStart + 1; // inside container, before first child
+  let childIdx = -1;
+  let offsetInChild = 0;
+  container.forEach((child, _off, idx) => {
+    if (childIdx !== -1) return;
+    const childOpen = walkPos;
+    const childClose = walkPos + child.nodeSize;
+    if (orig <= childOpen) {
+      childIdx = idx;
+      offsetInChild = 0;
+    } else if (orig < childClose) {
+      childIdx = idx;
+      offsetInChild = orig - (childOpen + 1);
+    }
+    walkPos = childClose;
+  });
+  if (childIdx === -1) {
+    // Position was just inside the container's closing boundary,
+    // past the last child — clamp to end of the last lifted item.
+    childIdx = lifted.length - 1;
+    const lastLifted = lifted[childIdx]!;
+    offsetInChild = lastLifted.type.name === 'analytic_unit'
+      ? lastLifted.firstChild!.content.size
+      : lastLifted.content.size;
+  }
+
+  // Sum sizes of preceding lifted items to find where the target
+  // lifted item starts in the new doc.
+  let newPos = containerStart;
+  for (let i = 0; i < childIdx; i++) {
+    newPos += lifted[i]!.nodeSize;
+  }
+  const liftedChild = lifted[childIdx]!;
+  if (liftedChild.type.name === 'analytic_unit') {
+    // analytic_unit wraps analytic → 2 opening boundaries.
+    const inner = liftedChild.firstChild!;
+    return newPos + 2 + Math.max(0, Math.min(offsetInChild, inner.content.size));
+  }
+  return newPos + 1 + Math.max(0, Math.min(offsetInChild, liftedChild.content.size));
 }

@@ -20,7 +20,8 @@ import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { createNodeFromLoroObj, LoroUndoPlugin, undo, redo } from 'loro-prosemirror';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../src/schema/index.js';
-import { setHeading as cmSetHeading, setTag as cmSetTag } from './structural-commands.js';
+import { setHeading as cmSetHeading, setTag as cmSetTag, clearToNormal as cmClearToNormal } from './structural-commands.js';
+import { docOutline, type OutlineItem } from './resolve-name.js';
 import { CollabSession } from '../../src/editor/collab/collab-session.js';
 import { RoomsClient } from '../../src/editor/collab/room-client.js';
 import {
@@ -48,45 +49,11 @@ const EDITOR_PAGE =
   '.pmd-comment-range{background:color-mix(in srgb,#f59e0b 20%,transparent);border-bottom:2px solid #f59e0b}' +
   '</style></head><body><div id="editor" class="pmd-viewer-doc"></div></body></html>';
 
-// Heading/tag conversion uses CardMirror's REAL setHeading/setTag, extracted
-// verbatim into structural-commands.ts (ribbon-commands.ts itself can't be
-// bundled — it transitively imports @cardcutter/browser). These handle every
-// case the app does: doc-level blocks, converting/dissolving a card's tag, and
-// splitting a card at a body slot.
-const DOC_HEADINGS = ['pocket', 'hat', 'block'];
-/** Wrap a structural command so the F-key is ALWAYS claimed (browser default
- *  suppressed) even when the command can't act at the cursor. */
-function claimKey(cmd: Command): Command {
-  return (state, dispatch, view) => { cmd(state, dispatch, view); return true; };
-}
-
-/** Clear formatting (F12): strip all inline marks across the selection (or the
- *  cursor's block) AND convert a doc-level heading back to a plain paragraph —
- *  CardMirror's "clear back to plain text". Marks are stripped even inside a
- *  card; the heading→paragraph part is doc-level only. */
-function clearFormattingTr(state: EditorState): Transaction | null {
-  const sel = state.selection;
-  const $from = sel.$from;
-  let tr = state.tr;
-  let changed = false;
-  const mFrom = sel.empty ? $from.start($from.depth) : sel.from;
-  const mTo = sel.empty ? $from.end($from.depth) : sel.to;
-  if (mTo > mFrom) { tr = tr.removeMark(mFrom, mTo, null); changed = true; }
-  const node = $from.depth >= 1 ? $from.node(1) : null;
-  const para = schema.nodes['paragraph'];
-  if (node && DOC_HEADINGS.includes(node.type.name) && para) {
-    tr = tr.setNodeMarkup($from.before(1), para, {});
-    changed = true;
-  }
-  return changed ? tr.scrollIntoView() : null;
-}
-function clearFormattingCmd(): Command {
-  return (state, dispatch) => {
-    const tr = clearFormattingTr(state);
-    if (tr && dispatch) dispatch(tr);
-    return true; // claim F12
-  };
-}
+// Heading/tag conversion + clear-to-plain-text use CardMirror's REAL commands,
+// extracted verbatim into structural-commands.ts (ribbon-commands.ts itself
+// can't be bundled — it transitively imports @cardcutter/browser). These handle
+// every case the app does: doc-level blocks, converting/dissolving a card's
+// tag, splitting a card at a body slot, and demoting anything to plain text.
 
 // Inline mark toggles (bold/italic/cite/underline/emphasis/highlight). Safe —
 // pure toggleMark, no structure change, works anywhere including inside cards.
@@ -99,12 +66,6 @@ function markCommand(name: string, attrs?: Record<string, unknown>): Command {
   const type = schema.marks[name];
   return type ? toggleMark(type, attrs) : () => false;
 }
-/** F-key mark toggle that always claims the key (so F8–F11 don't hit browser
- *  defaults while editing). */
-function fKeyMark(name: string, attrs?: Record<string, unknown>): Command {
-  const base = markCommand(name, attrs);
-  return (state, dispatch, view) => { base(state, dispatch, view); return true; };
-}
 
 export interface EditOpts {
   relayUrl: string;
@@ -115,6 +76,8 @@ export interface EditOpts {
 export type EditStatus = 'connecting' | 'live' | 'offline' | 'ended' | 'full' | 'error';
 export interface EditCallbacks {
   onStatus: (status: EditStatus, detail?: string) => void;
+  /** Fires with the current heading outline on every doc change (live nav). */
+  onOutline?: (outline: OutlineItem[]) => void;
 }
 export type HeadingResult = 'converted' | 'none';
 export interface EditHandle {
@@ -192,27 +155,40 @@ export async function mountEditor(
       commentSync.plugin,
       commentsPlugin,
       keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo }),
-      keymap({
-        F4: claimKey(cmSetHeading('pocket')), F5: claimKey(cmSetHeading('hat')),
-        F6: claimKey(cmSetHeading('block')), F7: claimKey(cmSetTag()),
-        F12: clearFormattingCmd(),
-      }),
-      keymap({
-        'Mod-b': markCommand('bold'), 'Mod-i': markCommand('italic'),
-        F8: fKeyMark('cite_mark'), F9: fKeyMark('underline_mark'),
-        F10: fKeyMark('emphasis_mark'), F11: fKeyMark('highlight', { color: 'yellow' }),
-      }),
+      keymap({ 'Mod-b': markCommand('bold'), 'Mod-i': markCommand('italic') }),
       keymap(baseKeymap),
     ],
   });
-  view = new EditorView(mount, { state });
 
-  // Some F-keys are browser-reserved (F5 reload, F7 caret) and would fire
-  // before ProseMirror's keymap. Claim F4–F7 at capture phase inside the
-  // iframe so the editor's bindings win; propagation still reaches PM.
+  const emitOutline = () => { if (view) cbs.onOutline?.(docOutline(view.state.doc)); };
+  view = new EditorView(mount, {
+    state,
+    dispatchTransaction(tr) {
+      if (!view) return;
+      view.updateState(view.state.apply(tr));
+      if (tr.docChanged) emitOutline();
+    },
+  });
+  emitOutline(); // initial outline
+
+  // Direct F-key handling (capture phase, inside the iframe). prosemirror-keymap
+  // can miss function keys in a cross-document mount, and the browser reserves
+  // several (F5 reload / F7 caret / F11 fullscreen / F12 devtools); dispatching
+  // the command here + preventDefault is the reliable path. F12 (devtools) may
+  // still win in some browsers — the Clear button covers that.
+  const F_COMMANDS: Record<string, () => Command> = {
+    F4: () => cmSetHeading('pocket'), F5: () => cmSetHeading('hat'), F6: () => cmSetHeading('block'),
+    F7: () => cmSetTag(),
+    F8: () => markCommand('cite_mark'), F9: () => markCommand('underline_mark'),
+    F10: () => markCommand('emphasis_mark'), F11: () => markCommand('highlight', { color: 'yellow' }),
+    F12: () => cmClearToNormal(),
+  };
   try {
     idoc.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (/^F([4-9]|1[0-2])$/.test(e.key)) e.preventDefault();
+      const make = F_COMMANDS[e.key];
+      if (!make || !view) return;
+      e.preventDefault();
+      make()(view.state, view.dispatch.bind(view), view);
     }, true);
   } catch { /* older browsers */ }
 
@@ -237,11 +213,9 @@ export async function mountEditor(
     },
     clearFormatting() {
       if (!view) return false;
-      const tr = clearFormattingTr(view.state);
-      if (!tr) return false;
-      view.dispatch(tr);
+      const ran = cmClearToNormal()(view.state, view.dispatch.bind(view), view);
       view.focus();
-      return true;
+      return ran;
     },
     applyMark(name, attrs) {
       if (!view) return false;

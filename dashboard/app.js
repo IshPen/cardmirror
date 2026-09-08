@@ -767,7 +767,9 @@ function renderHistAt(i, first) {
   if (step.title) $('viewer-title').textContent = step.title;
   buildOutline(step.outline);
   const t = _hist.times[idx];
-  const when = idx === 0 ? 'start (compacted)' : (t ? new Date(t).toLocaleString() : 'revision ' + idx);
+  // created_at is naive UTC — parseUtc appends 'Z' so it renders in the coach's
+  // local timezone (else it'd read as local and be hours off).
+  const when = idx === 0 ? 'start (compacted)' : (t ? parseUtc(t).toLocaleString() : 'revision ' + idx);
   $('hist-label').textContent = `${when}  ·  ${idx + 1}/${_hist.count}`;
   _histFragment = step.fragment;
   if (first) {
@@ -901,7 +903,7 @@ async function startEdit() {
     const handle = await v.mountEditor(
       frame,
       { relayUrl: config.relay, token: config.relaytoken, roomId: _viewerRoomId, keyBytes: opts.keyBytes },
-      { onStatus: setEditStatus },
+      { onStatus: setEditStatus, onOutline: buildOutline },
     );
     if (!$('viewer-body').contains(frame)) { await handle.stop(); return; } // moved on mid-connect
     _editHandle = handle;
@@ -1464,6 +1466,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('fmt-cite').onclick = () => applyFmt('cite_mark');
   $('fmt-emphasis').onclick = () => applyFmt('emphasis_mark');
   $('fmt-highlight').onclick = applyHighlight;
+  // Keep the editor's selection when clicking a toolbar button: preventing the
+  // mousedown default stops focus leaving the iframe (which would collapse the
+  // selection, so mark/clear ops had nothing to act on).
+  for (const id of ['fmt-bold', 'fmt-italic', 'fmt-underline', 'fmt-cite', 'fmt-emphasis',
+    'fmt-highlight', 'head-pocket', 'head-hat', 'head-block', 'head-tag', 'head-clear', 'comment-add']) {
+    const b = $(id); if (b) b.onmousedown = (e) => e.preventDefault();
+  }
   $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;
