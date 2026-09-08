@@ -13,14 +13,14 @@
  * Reuses CardMirror's audited modules verbatim (CollabSession, LoroSyncPlugin,
  * comments plugin + collab-comments sync) to keep correctness risk minimal.
  */
-import { EditorState } from 'prosemirror-state';
+import { EditorState, type Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { history } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
-import { createNodeFromLoroObj } from 'loro-prosemirror';
+import { createNodeFromLoroObj, LoroUndoPlugin, undo, redo } from 'loro-prosemirror';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../src/schema/index.js';
+import { newHeadingId } from '../../src/schema/ids.js';
 import { CollabSession } from '../../src/editor/collab/collab-session.js';
 import { RoomsClient } from '../../src/editor/collab/room-client.js';
 import {
@@ -47,6 +47,30 @@ const EDITOR_PAGE =
   '.pmd-pocket,.pmd-hat,.pmd-block,.pmd-card,.pmd-analytic-unit{content-visibility:visible}' +
   '.pmd-comment-range{background:color-mix(in srgb,#f59e0b 20%,transparent);border-bottom:2px solid #f59e0b}' +
   '</style></head><body><div id="editor" class="pmd-viewer-doc"></div></body></html>';
+
+// Convert the cursor's DOC-LEVEL block to a heading (F4=pocket, F5=hat,
+// F6=block) — the common case of CardMirror's setHeading, replicated so we
+// don't bundle the app-coupled ribbon-commands module. Only doc-level blocks
+// convert (a no-op inside cards); tag/card structural edits are a later batch.
+// Always claims the key while editing so F5 doesn't reload the page.
+const DOC_LEVEL_CONVERTIBLE = ['paragraph', 'cite_paragraph', 'undertag', 'card_body', 'pocket', 'hat', 'block'];
+const DOC_HEADINGS = ['pocket', 'hat', 'block'];
+function setDocHeading(typeName: string): Command {
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    const node = $from.depth >= 1 ? $from.node(1) : null; // direct child of doc
+    if (node && DOC_LEVEL_CONVERTIBLE.includes(node.type.name) && node.type.name !== typeName) {
+      const target = schema.nodes[typeName];
+      if (target && dispatch) {
+        const id = DOC_HEADINGS.includes(node.type.name)
+          ? ((node.attrs['id'] as string | null) ?? newHeadingId())
+          : newHeadingId();
+        dispatch(state.tr.setNodeMarkup($from.before(1), target, { id }).scrollIntoView());
+      }
+    }
+    return true; // claim F4–F6 while the editor is focused (prevents F5 reload)
+  };
+}
 
 export interface EditOpts {
   relayUrl: string;
@@ -113,8 +137,19 @@ export async function mountEditor(
   const state = EditorState.create({
     schema,
     doc: pmNode,
-    // LoroSyncPlugin MUST be first — it observes every transaction.
-    plugins: [...session.plugins(), commentSync.plugin, commentsPlugin, history(), keymap(baseKeymap)],
+    // LoroSyncPlugin MUST be first — it observes every transaction. Undo/redo
+    // uses Loro's CRDT undo manager (reverts only THIS peer's edits — plain
+    // prosemirror-history is unsafe once remote edits interleave), matching the
+    // app's collab keymap. Heading F-keys run before baseKeymap.
+    plugins: [
+      ...session.plugins(),
+      LoroUndoPlugin({ doc: session.loroDoc }),
+      commentSync.plugin,
+      commentsPlugin,
+      keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo }),
+      keymap({ F4: setDocHeading('pocket'), F5: setDocHeading('hat'), F6: setDocHeading('block') }),
+      keymap(baseKeymap),
+    ],
   });
   view = new EditorView(mount, { state });
 
