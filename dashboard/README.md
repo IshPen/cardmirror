@@ -102,6 +102,38 @@ random secret), the list lives in this browser, and the panel keeps the
 > Switching to multi-token mode (env or DB) stops the old shared token
 > working, so every machine must move to its own per-person token.
 
+## Working across devices (encrypted cloud sync)
+
+By default everything the dashboard remembers — your token list, the ✉️
+roster, doc **names**, and the room **keys** it has learned — lives in the
+browser you set it up in. To carry it to another laptop or your phone, the
+**Tokens** panel has a **Sync across devices** box that reuses your coach
+sign-in.
+
+Once you sign in there, the dashboard:
+
+- stores your **non-secret** UI prefs (theme, nav levels) as plaintext in a
+  per-coach `dashboard_state` row (Row-Level Security → only you can read it);
+- **encrypts your secrets** (tokens, roster, doc names, room keys) in the
+  browser with AES-256-GCM, using a key derived from your **login password**,
+  and stores only the ciphertext. Supabase — which also holds the encrypted
+  docs — never sees your room keys in the clear, so **end-to-end encryption
+  still holds** even though both sit in one database.
+
+Sign in on any device and your state is restored (union-merged, so two
+devices never clobber each other). Two caveats:
+
+- **Forget the password → the vault can't be decrypted.** If you've *changed*
+  your Supabase password since, sign-in offers to re-initialise sync from the
+  current device.
+- The dashboard's **member identity is not synced** — it's a non-extractable
+  key by design. So *receiving a brand-new invite* is pinned to whichever
+  device the student invited; the instant you receive it, that room's key
+  syncs to your other devices and **Open works everywhere**.
+
+Needs section 5 of [`setup.sql`](./setup.sql) (the `dashboard_state` table)
+and the same coach login as token sync.
+
 ## Setup (≈10 minutes)
 
 1. **Supabase** — create a free project, then in **SQL Editor** paste and run

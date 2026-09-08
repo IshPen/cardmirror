@@ -394,6 +394,21 @@
           <button id="tk-close" class="btn ghost small" type="button">Close</button>
         </div>
       </div>
+
+      <div class="sync-box">
+        <div class="sync-title">Sync across devices
+          <span class="muted small">(follow you to any device — uses the same coach sign-in above)</span></div>
+        <p class="muted small">
+          Your token list, roster, doc names and room keys are encrypted with your
+          login password and stored in your Supabase project, so signing in on a new
+          device restores them. Secrets never leave your browser un-encrypted.
+        </p>
+        <div class="config-actions">
+          <button id="sync-now" class="btn small" type="button">Sync now</button>
+          <span class="muted small" id="sync-status">Sign in above to enable device sync.</span>
+        </div>
+      </div>
+
       <p class="muted small" id="tk-status"></p>
     </div>
   </div>
@@ -532,6 +547,7 @@
     <a href="https://github.com/ant981228/cardmirror" target="_blank" rel="noopener">source</a>
   </footer>
 
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

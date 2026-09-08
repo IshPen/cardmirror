@@ -19,6 +19,9 @@
 --       lives only in the coach's browser. (Privacy note at section 3.)
 --    4. relay_tokens — optional DB-backed per-student tokens so you can
 --       add/remove students from the dashboard with no redeploy.
+--    5. dashboard_state — optional cross-device sync so your dashboard's
+--       tokens, roster, doc names and (encrypted) room keys follow you to
+--       any device after you sign in. Secrets are encrypted in the browser.
 --
 --  Why this never breaks the relay: the relay connects as the table OWNER
 --  (the `postgres` role in your pooler URL), and owners bypass RLS on their
@@ -111,6 +114,29 @@ grant select, insert, update, delete on relay_tokens to authenticated;
 drop policy if exists "coach manages tokens" on relay_tokens;
 create policy "coach manages tokens"
   on relay_tokens for all to authenticated using (true) with check (true);
+
+-- 5 ── Cross-device dashboard state (optional) ───────────────────────
+--  One row PER COACH (keyed to their auth.users id), readable/writable only
+--  by that signed-in coach (RLS below). `prefs` is non-secret UI (theme, nav
+--  levels) in the clear; `vault` is the coach's secrets — token list, roster,
+--  and known-room titles+keys — ENCRYPTED in the browser (AES-256-GCM, key =
+--  PBKDF2 of the login password) before it ever leaves the machine. So even
+--  though this sits in the same database as the encrypted docs, Supabase
+--  never sees the room keys in the clear and E2E holds. Needs the same coach
+--  login as section 4.
+create table if not exists dashboard_state (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  prefs      jsonb default '{}'::jsonb,   -- non-secret UI prefs (plaintext)
+  vault      text,                         -- AES-256-GCM ciphertext envelope
+  updated_at timestamptz default now()
+);
+alter table dashboard_state enable row level security;
+revoke all on dashboard_state from anon;                    -- public key: nothing
+grant select, insert, update, delete on dashboard_state to authenticated;
+drop policy if exists "coach owns their state" on dashboard_state;
+create policy "coach owns their state"
+  on dashboard_state for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Tidy up the helpers.
 drop function if exists _dr_secure(text);

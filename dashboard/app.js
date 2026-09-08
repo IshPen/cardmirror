@@ -1352,6 +1352,98 @@ async function syncTokensToRelay() {
   return rows.length;
 }
 
+// ── Cross-device sync (encrypted vault, see sync.js) ─────────────────
+// A snapshot of everything worth carrying between devices. `prefs` is
+// non-secret (theme/nav); `vault` holds the secrets sync.js encrypts.
+function syncSnapshot() {
+  return {
+    prefs: { theme: localStorage.getItem(THEME_KEY) || '', nav: navLevels() },
+    vault: {
+      team: (config && config.team) || [],
+      relaytoken: (config && config.relaytoken) || '',
+      roster: (config && config.roster) || '',
+      knownRooms: knownRoomsStore(),
+    },
+  };
+}
+
+// Merge a pulled row into local state. Unions (never clobbers) so two
+// devices that each learned different rooms/tokens both keep them.
+function syncHydrate(row) {
+  if (!row) return;
+  if (row.prefs) {
+    if (row.prefs.theme) { localStorage.setItem(THEME_KEY, row.prefs.theme); applyTheme(row.prefs.theme); }
+    if (row.prefs.nav) localStorage.setItem(NAV_LEVELS_KEY, JSON.stringify(row.prefs.nav));
+  }
+  const v = row.vault;
+  if (v) {
+    if (!config) config = { relay: '', supabase: '', anon: '' };
+    const byToken = new Map();
+    for (const p of (v.team || [])) byToken.set(p.token, p);
+    for (const p of (config.team || [])) if (!byToken.has(p.token)) byToken.set(p.token, p);
+    config.team = [...byToken.values()];
+    config.roster = v.roster || config.roster || '';
+    config.relaytoken = config.relaytoken || v.relaytoken || '';
+    saveConfig(config);
+    // Union known-rooms by roomId (local wins on a shared id — it may be fresher).
+    const merged = { ...(v.knownRooms || {}), ...knownRoomsStore() };
+    localStorage.setItem(KNOWN_ROOMS_KEY, JSON.stringify(merged));
+  }
+}
+
+let _lastSyncSig = '';
+function syncSig() { return JSON.stringify(syncSnapshot()); }
+
+function setSyncStatus(msg) {
+  const el = $('sync-status'); if (!el) return;
+  if (msg) { el.textContent = msg; return; }
+  const s = DRSync.state;
+  if (!s.configured) { el.textContent = 'Sign in above to enable device sync.'; return; }
+  if (s.lastPush) { el.textContent = 'Synced ✓ ' + new Date(s.lastPush).toLocaleTimeString(); return; }
+  el.textContent = 'Ready to sync.';
+}
+
+async function syncPush() {
+  if (!DRSync.ready()) return;
+  try { await DRSync.push(syncSnapshot()); _lastSyncSig = syncSig(); setSyncStatus(); }
+  catch (e) { setSyncStatus(String(e.message || e)); }
+}
+
+// Called right after a successful coach sign-in (password still in hand).
+async function syncOnSignIn(password) {
+  if (!config || !config.supabase || !config.anon) return;
+  DRSync.configure({ supabaseUrl: config.supabase, anonKey: config.anon, jwt: authToken() });
+  DRSync.setPassword(password);
+  setSyncStatus('Syncing…');
+  try {
+    const row = await DRSync.pull();
+    if (!row.fresh) syncHydrate(row);
+    await syncPush();                 // push merged (or first-ever) state back
+    if (typeof renderTeam === 'function') renderTeam();
+    refreshAll();
+  } catch (e) {
+    if (e && e.name === 'OperationError') {
+      const ok = confirm(
+        'Could not unlock your synced data with this password (did you change ' +
+        'your Supabase password?). Re-initialise cloud sync from THIS device\'s ' +
+        'data? Other devices will then need the new password.'
+      );
+      if (ok) { try { await DRSync.push(syncSnapshot()); _lastSyncSig = syncSig(); setSyncStatus(); } catch (e2) { setSyncStatus(String(e2.message || e2)); } }
+      else setSyncStatus('Vault locked — data not restored.');
+    } else setSyncStatus(String(e.message || e));
+  }
+}
+
+// Push whenever local state changes (member polling, token edits, etc.).
+function startSyncLoop() {
+  setInterval(() => {
+    if (DRSync.ready() && !DRSync.state.busy && syncSig() !== _lastSyncSig) syncPush();
+  }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && DRSync.ready() && syncSig() !== _lastSyncSig) syncPush();
+  });
+}
+
 function renderTeam() {
   const body = $('team-body');
   const list = team();
@@ -1414,6 +1506,7 @@ function openTokens() {
   $('tk-status').textContent = '';
   $('tk-error').classList.add('hidden');
   $('tk-auth-status').textContent = authStatusText();
+  setSyncStatus();
   $('tokens-modal').classList.remove('hidden');
 }
 function closeTokens() { $('tokens-modal').classList.add('hidden'); }
@@ -1522,6 +1615,7 @@ function toggleTheme() {
   applyTheme(next);
 }
 initTheme();
+startSyncLoop();
 
 document.addEventListener('DOMContentLoaded', () => {
   $('theme-btn').onclick = toggleTheme;
@@ -1546,12 +1640,19 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('tk-signin').onclick = async () => {
     $('tk-status').textContent = 'Signing in…';
+    const pw = $('tk-password').value; // captured before we clear the field
     try {
-      await coachSignIn($('tk-email-auth').value.trim(), $('tk-password').value);
+      await coachSignIn($('tk-email-auth').value.trim(), pw);
       $('tk-password').value = '';
       $('tk-auth-status').textContent = authStatusText();
-      $('tk-status').textContent = 'Signed in. Click “Sync to relay” to push your token list.';
+      $('tk-status').textContent = 'Signed in. Restoring your synced data…';
+      await syncOnSignIn(pw);
+      $('tk-status').textContent = 'Signed in. Tokens + settings synced across your devices.';
     } catch (e) { $('tk-status').textContent = String(e.message || e); }
+  };
+  $('sync-now').onclick = async () => {
+    if (!DRSync.ready()) { setSyncStatus('Sign in above first.'); return; }
+    setSyncStatus('Syncing…'); await syncPush();
   };
   $('tk-sync').onclick = async () => {
     $('tk-status').textContent = 'Syncing…';
