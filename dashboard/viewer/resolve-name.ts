@@ -109,7 +109,9 @@ const VIEWER_BASE_CSS = `
     padding: 24px 32px 96px;
     color: #111;
     font-family: 'Calibri', 'Carlito', 'Times New Roman', 'Tinos', serif;
+    font-size: var(--pmd-size-normal, 11pt);   /* CardMirror base reading size */
     --pmd-color-undertag: #555;
+    --pmd-emphasis-box-size: 1pt;   /* CardMirror default emphasis box */
   }
   .pmd-pocket, .pmd-hat, .pmd-block, .pmd-card, .pmd-analytic-unit {
     content-visibility: visible;
@@ -128,7 +130,7 @@ export function renderDocument(node: PMNode): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<style>' + EDITOR_CSS + '</style>' +
     '<style>' + VIEWER_BASE_CSS + '</style>' +
-    '</head><body><div id="editor" class="ProseMirror pmd-viewer-doc">' +
+    '</head><body><div id="editor" class="ProseMirror pmd-viewer-doc pmd-emphasis-bold pmd-emphasis-box">' +
     body +
     '</div></body></html>'
   );

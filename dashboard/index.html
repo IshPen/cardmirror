@@ -373,6 +373,7 @@
         <span id="viewer-live-status" class="live-badge hidden"></span>
         <span style="flex:1"></span>
         <button id="viewer-edit-btn" class="btn ghost small hidden" type="button" title="Experimental: edit this live document">Edit</button>
+        <button id="viewer-comments-btn" class="btn ghost small" type="button" title="Show / hide comments">Comments</button>
         <button id="viewer-note-btn" class="btn ghost small hidden" type="button" title="Send a note to the author">Note</button>
         <button id="viewer-history-btn" class="btn ghost small" type="button" title="Version history">History</button>
         <button id="viewer-docx-btn" class="btn ghost small" type="button" title="Download .docx">.docx</button>
@@ -426,8 +427,23 @@
         <button id="hist-close" class="btn ghost small" type="button">Exit history</button>
       </div>
       <div class="viewer-split">
-        <nav id="viewer-outline" class="viewer-outline" aria-label="Document outline"></nav>
+        <div class="viewer-outline-col">
+          <div class="outline-head">
+            <span class="outline-title">Outline</span>
+            <span class="lvl-toggles" role="group" aria-label="Heading levels shown">
+              <button class="lvl-toggle active" data-lvl="1" type="button" title="Pockets (H1)">1</button>
+              <button class="lvl-toggle active" data-lvl="2" type="button" title="Hats (H2)">2</button>
+              <button class="lvl-toggle active" data-lvl="3" type="button" title="Blocks (H3)">3</button>
+              <button class="lvl-toggle active" data-lvl="4" type="button" title="Tags / Analytics (H4)">4</button>
+            </span>
+          </div>
+          <nav id="viewer-outline" class="viewer-outline" aria-label="Document outline"></nav>
+        </div>
         <div id="viewer-body" class="viewer-body">Loading…</div>
+        <aside id="viewer-comments" class="viewer-comments hidden" aria-label="Comments">
+          <div class="comments-head">Comments</div>
+          <div id="comments-list" class="comments-list"><p class="muted small">No comments.</p></div>
+        </aside>
       </div>
     </div>
   </div>

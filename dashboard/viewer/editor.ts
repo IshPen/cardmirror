@@ -29,6 +29,7 @@ import {
   commentsPlugin,
   addThreadMeta,
   newCommentId,
+  getCommentsState,
   type Thread,
   type Comment,
 } from '../../src/editor/comments-plugin.js';
@@ -44,10 +45,11 @@ const EDITOR_PAGE =
   '<style>' + EDITOR_CSS + '</style>' +
   '<style>html,body{margin:0;background:#fff}' +
   "#editor{max-width:8.5in;margin:0 auto;padding:24px 32px 96px;color:#111;" +
-  "font-family:'Calibri','Carlito','Times New Roman','Tinos',serif;--pmd-color-undertag:#555;outline:none}" +
+  "font-family:'Calibri','Carlito','Times New Roman','Tinos',serif;font-size:var(--pmd-size-normal,11pt);" +
+  '--pmd-color-undertag:#555;--pmd-emphasis-box-size:1pt;outline:none}' +
   '.pmd-pocket,.pmd-hat,.pmd-block,.pmd-card,.pmd-analytic-unit{content-visibility:visible}' +
   '.pmd-comment-range{background:color-mix(in srgb,#f59e0b 20%,transparent);border-bottom:2px solid #f59e0b}' +
-  '</style></head><body><div id="editor" class="pmd-viewer-doc"></div></body></html>';
+  '</style></head><body><div id="editor" class="pmd-viewer-doc pmd-emphasis-bold pmd-emphasis-box"></div></body></html>';
 
 // Heading/tag conversion + clear-to-plain-text use CardMirror's REAL commands,
 // extracted verbatim into structural-commands.ts (ribbon-commands.ts itself
@@ -66,6 +68,23 @@ function markCommand(name: string, attrs?: Record<string, unknown>): Command {
   const type = schema.marks[name];
   return type ? toggleMark(type, attrs) : () => false;
 }
+/** Highlight is different from a plain toggle: applying a new colour must
+ *  REPLACE any existing highlight on the range (not stack). Remove then add;
+ *  'none' just removes. Needs a non-empty selection. */
+function highlightCommand(color: string): Command {
+  return (state, dispatch) => {
+    const type = schema.marks['highlight'];
+    if (!type) return false;
+    const { from, to, empty } = state.selection;
+    if (empty) return false;
+    if (dispatch) {
+      let tr = state.tr.removeMark(from, to, type);
+      if (color !== 'none') tr = tr.addMark(from, to, type.create({ color }));
+      dispatch(tr.scrollIntoView());
+    }
+    return true;
+  };
+}
 
 export interface EditOpts {
   relayUrl: string;
@@ -74,10 +93,48 @@ export interface EditOpts {
   keyBytes: Uint8Array;
 }
 export type EditStatus = 'connecting' | 'live' | 'offline' | 'ended' | 'full' | 'error';
+export interface CommentView {
+  id: string;
+  author: string;
+  text: string;
+  date: string;
+  /** The text the comment is anchored to (for context in the panel). */
+  snippet: string;
+}
 export interface EditCallbacks {
   onStatus: (status: EditStatus, detail?: string) => void;
   /** Fires with the current heading outline on every doc change (live nav). */
   onOutline?: (outline: OutlineItem[]) => void;
+  /** Fires with the current comment threads (for the comments panel). */
+  onComments?: (comments: CommentView[]) => void;
+}
+
+function collectComments(view: EditorView): CommentView[] {
+  const cs = getCommentsState(view.state);
+  const ct = schema.marks['comment_range'];
+  const out: CommentView[] = [];
+  for (const thread of cs.threads.values()) {
+    const root = thread.comments[0];
+    if (!root) continue;
+    let snippet = '';
+    if (ct) {
+      view.state.doc.descendants((n) => {
+        if (snippet.length > 90) return false;
+        if (n.isText && n.marks.some((m) => m.type === ct && m.attrs['threadId'] === thread.id)) {
+          snippet += n.text || '';
+        }
+        return true;
+      });
+    }
+    out.push({
+      id: thread.id,
+      author: root.author || 'Coach',
+      text: root.text || '',
+      date: root.date || '',
+      snippet: snippet.slice(0, 90),
+    });
+  }
+  return out;
 }
 export type HeadingResult = 'converted' | 'none';
 export interface EditHandle {
@@ -92,8 +149,10 @@ export interface EditHandle {
   /** Clear formatting (F12): strip marks + heading→paragraph. */
   clearFormatting: () => boolean;
   /** Toggle an inline mark on the selection (bold/italic/cite_mark/
-   *  underline_mark/emphasis_mark/highlight). Works inside cards. */
+   *  underline_mark/emphasis_mark). Works inside cards. */
   applyMark: (name: string, attrs?: Record<string, unknown>) => boolean;
+  /** Apply/replace a highlight colour on the selection ('none' removes). */
+  setHighlight: (color: string) => boolean;
   /** True while text is selected (for enabling the comment control). */
   hasSelection: () => boolean;
   stop: () => Promise<void>;
@@ -161,15 +220,19 @@ export async function mountEditor(
   });
 
   const emitOutline = () => { if (view) cbs.onOutline?.(docOutline(view.state.doc)); };
+  const emitComments = () => { if (view) cbs.onComments?.(collectComments(view)); };
   view = new EditorView(mount, {
     state,
     dispatchTransaction(tr) {
       if (!view) return;
       view.updateState(view.state.apply(tr));
       if (tr.docChanged) emitOutline();
+      // Comments change via edits AND remote sync-load, so emit each tick.
+      emitComments();
     },
   });
-  emitOutline(); // initial outline
+  emitOutline();  // initial
+  emitComments();
 
   // Direct F-key handling (capture phase, inside the iframe). prosemirror-keymap
   // can miss function keys in a cross-document mount, and the browser reserves
@@ -180,7 +243,7 @@ export async function mountEditor(
     F4: () => cmSetHeading('pocket'), F5: () => cmSetHeading('hat'), F6: () => cmSetHeading('block'),
     F7: () => cmSetTag(),
     F8: () => markCommand('cite_mark'), F9: () => markCommand('underline_mark'),
-    F10: () => markCommand('emphasis_mark'), F11: () => markCommand('highlight', { color: 'yellow' }),
+    F10: () => markCommand('emphasis_mark'), F11: () => highlightCommand('yellow'),
     F12: () => cmClearToNormal(),
   };
   try {
@@ -222,6 +285,12 @@ export async function mountEditor(
       const type = schema.marks[name];
       if (!type) return false;
       const ok = toggleMark(type, attrs)(view.state, view.dispatch.bind(view), view);
+      view.focus();
+      return ok;
+    },
+    setHighlight(color) {
+      if (!view) return false;
+      const ok = highlightCommand(color)(view.state, view.dispatch.bind(view), view);
       view.focus();
       return ok;
     },

@@ -563,21 +563,79 @@ function viewerFrame() {
 
 // Heading outline rail. Ids match the schema's data-id on each heading, so a
 // click scrolls the rendered iframe to that heading.
+// Which heading levels (1=Pocket … 4=Tag/Analytic) show in the nav rail.
+const NAV_LEVELS_KEY = 'debate-relay-nav-levels';
+function navLevels() {
+  try { return JSON.parse(localStorage.getItem(NAV_LEVELS_KEY) || 'null') || { 1: true, 2: true, 3: true, 4: true }; }
+  catch { return { 1: true, 2: true, 3: true, 4: true }; }
+}
+let _lastOutline = [];
 function buildOutline(entries) {
+  _lastOutline = entries || [];
   const nav = $('viewer-outline');
-  if (!entries || !entries.length) {
+  const levels = navLevels();
+  const shown = _lastOutline.filter((e) => levels[e.level || 1]);
+  if (!shown.length) {
     nav.innerHTML = '<p class="muted small">No headings</p>';
     return;
   }
   nav.innerHTML = '';
-  for (const e of entries) {
+  for (const e of shown) {
     const a = document.createElement('a');
     a.className = 'outline-item lvl' + (e.level || 1);
-    a.textContent = e.text || '(untitled)';
+    // Empty heading (e.g. a blank pocket): keep an indented filler row, not
+    // an "(untitled)" label.
+    if (e.text && e.text.trim()) a.textContent = e.text;
+    else { a.innerHTML = '&nbsp;'; a.classList.add('outline-empty'); }
     if (e.id) a.onclick = () => scrollToHeading(e.id);
     else a.classList.add('disabled');
     nav.appendChild(a);
   }
+}
+function toggleNavLevel(lvl) {
+  const levels = navLevels();
+  levels[lvl] = !levels[lvl];
+  localStorage.setItem(NAV_LEVELS_KEY, JSON.stringify(levels));
+  const btn = document.querySelector('.lvl-toggle[data-lvl="' + lvl + '"]');
+  if (btn) btn.classList.toggle('active', levels[lvl]);
+  buildOutline(_lastOutline);
+}
+function initNavLevelToggles() {
+  const levels = navLevels();
+  for (const btn of document.querySelectorAll('.lvl-toggle')) {
+    const lvl = +btn.dataset.lvl;
+    btn.classList.toggle('active', !!levels[lvl]);
+    btn.onclick = () => toggleNavLevel(lvl);
+  }
+}
+
+// Comments panel (populated by the editor's onComments callback while editing).
+function renderComments(comments) {
+  const list = $('comments-list');
+  if (!list) return;
+  if (!comments || !comments.length) {
+    list.innerHTML = '<p class="muted small">No comments yet. In Edit mode, select text and click Comment.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const c of comments) {
+    const div = document.createElement('div');
+    div.className = 'comment-item';
+    div.innerHTML =
+      '<div class="comment-meta"><span class="comment-author">' + esc(c.author) + '</span>' +
+      (c.date ? '<span class="comment-date">' + esc(new Date(c.date).toLocaleString()) + '</span>' : '') + '</div>' +
+      (c.snippet ? '<div class="comment-snippet">“' + esc(c.snippet) + '”</div>' : '') +
+      '<div class="comment-text">' + esc(c.text || '(no text)') + '</div>';
+    list.appendChild(div);
+  }
+}
+function toggleComments() {
+  const panel = $('viewer-comments');
+  if (!panel) return;
+  const show = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !show);
+  const btn = $('viewer-comments-btn');
+  if (btn) btn.classList.toggle('primary', show);
 }
 function scrollToHeading(id) {
   const frame = viewerFrame();
@@ -598,6 +656,7 @@ async function openDoc(roomId) {
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
   $('viewer-modal').classList.remove('hidden');
   $('viewer-outline').innerHTML = '';
+  renderComments([]); // populated by the editor while editing
   setLiveStatus(null);
   const canLive = !!(kr && kr.keyB64 && config && config.relay && config.relaytoken);
   $('viewer-live-btn').classList.toggle('hidden', !canLive);
@@ -903,7 +962,7 @@ async function startEdit() {
     const handle = await v.mountEditor(
       frame,
       { relayUrl: config.relay, token: config.relaytoken, roomId: _viewerRoomId, keyBytes: opts.keyBytes },
-      { onStatus: setEditStatus, onOutline: buildOutline },
+      { onStatus: setEditStatus, onOutline: buildOutline, onComments: renderComments },
     );
     if (!$('viewer-body').contains(frame)) { await handle.stop(); return; } // moved on mid-connect
     _editHandle = handle;
@@ -942,8 +1001,9 @@ function applyFmt(name, attrs) {
   if (_editHandle) _editHandle.applyMark(name, attrs);
 }
 function applyHighlight() {
+  if (!_editHandle) return;
   const color = ($('fmt-hl-color') && $('fmt-hl-color').value) || 'yellow';
-  applyFmt('highlight', { color });
+  _editHandle.setHighlight(color);
 }
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
@@ -1445,6 +1505,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('viewer-close').onclick = closeViewer;
   $('viewer-live-btn').onclick = goLive;
+  $('viewer-comments-btn').onclick = toggleComments;
+  initNavLevelToggles();
   $('viewer-docx-btn').onclick = exportViewerDocx;
   $('viewer-pdf-btn').onclick = printViewerPDF;
   $('viewer-history-btn').onclick = openHistory;
@@ -1466,6 +1528,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('fmt-cite').onclick = () => applyFmt('cite_mark');
   $('fmt-emphasis').onclick = () => applyFmt('emphasis_mark');
   $('fmt-highlight').onclick = applyHighlight;
+  // Changing the colour re-highlights the current selection immediately.
+  if ($('fmt-hl-color')) $('fmt-hl-color').onchange = applyHighlight;
   // Keep the editor's selection when clicking a toolbar button: preventing the
   // mousedown default stops focus leaving the iframe (which would collapse the
   // selection, so mark/clear ops had nothing to act on).
