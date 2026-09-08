@@ -890,7 +890,27 @@ async function refreshAll() {
   refreshData();
 }
 
+// Theme (light/dark), persisted in this browser. Unset = follow the OS.
+const THEME_KEY = 'debate-relay-theme';
+function applyTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+}
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) applyTheme(saved);
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme')
+    || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+initTheme();
+
 document.addEventListener('DOMContentLoaded', () => {
+  $('theme-btn').onclick = toggleTheme;
   $('settings-btn').onclick = showConfig;
   $('refresh-btn').onclick = refreshAll;
   $('tokens-btn').onclick = openTokens;
