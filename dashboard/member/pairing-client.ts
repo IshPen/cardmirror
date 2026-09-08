@@ -19,6 +19,8 @@
 import {
   webOwnPublicCode,
   webOwnRoutingId,
+  webSeal,
+  webRoutingId,
   webOpen,
   type SealedBundle,
 } from '../../src/editor/pairing/web-pairing-crypto.js';
@@ -31,6 +33,11 @@ export interface KnownRoom {
   /** base64 of the 32-byte room key (for Goal 2 — opening the doc). */
   keyB64: string;
   at: number;
+  /** The inviting student's pairing public code (cmk1.…), captured from the
+   *  sealed invite — lets the coach send them a note back. */
+  senderCode?: string;
+  /** Their display name, if the invite carried one. */
+  senderName?: string;
 }
 
 const STORE_KEY = 'debate-relay-known-rooms';
@@ -61,6 +68,13 @@ export async function getRoutingId(): Promise<string> {
 
 interface RelayMessage extends SealedBundle { msgId: string; }
 
+/** Shape of an unsealed pairing payload we care about (invite item + sender). */
+interface UnsealedInner {
+  item?: { type?: unknown; sliceJson?: unknown };
+  senderCode?: unknown;
+  senderName?: unknown;
+}
+
 async function deleteMessage(base: string, token: string, id: string): Promise<void> {
   try {
     await fetch(`${base}/messages/${encodeURIComponent(id)}`, {
@@ -87,9 +101,9 @@ export async function pollInvites(relayUrl: string, token: string): Promise<Know
 
   const store = loadStore();
   for (const m of data.messages || []) {
-    let inner: { item?: { type?: unknown; sliceJson?: unknown } } | null = null;
+    let inner: UnsealedInner | null = null;
     try {
-      inner = (await webOpen(m)) as typeof inner;
+      inner = (await webOpen(m)) as UnsealedInner;
     } catch {
       await deleteMessage(base, token, m.msgId); // not for us / stale key
       continue;
@@ -103,6 +117,8 @@ export async function pollInvites(relayUrl: string, token: string): Promise<Know
           title: invite.title,
           keyB64: b64(decoded.keyBytes),
           at: Date.now(),
+          senderCode: typeof inner?.senderCode === 'string' ? inner.senderCode : store[decoded.roomId]?.senderCode,
+          senderName: typeof inner?.senderName === 'string' && inner.senderName ? inner.senderName : store[decoded.roomId]?.senderName,
         };
       }
     }
@@ -110,6 +126,41 @@ export async function pollInvites(relayUrl: string, token: string): Promise<Know
   }
   saveStore(store);
   return Object.values(store);
+}
+
+/**
+ * Send a plain-text note to a student, sealed to their pairing code — it
+ * arrives in their CardMirror "Receive" pill as a text item (no client
+ * change). `recipientPublicCode` is the student's cmk1.… code (captured on
+ * their invite; see KnownRoom.senderCode). `token` is the dashboard's relay
+ * bearer. Returns true when the relay accepted it.
+ */
+export async function sendNote(
+  relayUrl: string,
+  token: string,
+  recipientPublicCode: string,
+  text: string,
+  senderName = 'Coach',
+): Promise<boolean> {
+  const base = relayUrl.replace(/\/$/, '');
+  const inner = {
+    senderCode: await webOwnPublicCode(),
+    senderName,
+    item: {
+      label: 'Coach note',
+      type: 'text',
+      // A ProseMirror slice CardMirror can insert (paragraph of text).
+      sliceJson: { content: [{ type: 'paragraph', content: [{ type: 'text', text: String(text) }] }] },
+    },
+  };
+  const bundle = await webSeal(inner, recipientPublicCode);
+  const body = { v: 1 as const, recipientCode: await webRoutingId(recipientPublicCode), sentAt: Date.now(), ...bundle };
+  const res = await fetch(`${base}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.ok;
 }
 
 /** All rooms the dashboard has been invited into (from local storage). */

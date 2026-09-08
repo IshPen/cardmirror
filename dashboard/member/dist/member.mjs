@@ -1,103 +1,111 @@
-const p = "cmk1.", R = new TextEncoder().encode("cardmirror-pairing-v1"), v = "cardmirror-web-pairing", d = "keys", b = "x25519-v1";
-function w(t) {
+const w = "cmk1.", K = new TextEncoder().encode("cardmirror-pairing-v1"), x = "cardmirror-web-pairing", f = "keys", h = "x25519-v1";
+function d(t) {
   const e = t instanceof Uint8Array ? t : new Uint8Array(t);
   let n = "";
   for (const r of e) n += String.fromCharCode(r);
   return btoa(n).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function l(t) {
+function y(t) {
   const e = t.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - t.length % 4) % 4);
   return Uint8Array.from(atob(e), (n) => n.charCodeAt(0));
 }
-function A(t) {
-  const e = t.trim(), n = e.startsWith(p) ? e.slice(p.length) : e;
-  return l(n);
+function C(t) {
+  const e = t.trim(), n = e.startsWith(w) ? e.slice(w.length) : e;
+  return y(n);
 }
-async function C(t) {
+async function E(t) {
   return crypto.subtle.importKey(
     "jwk",
-    { kty: "OKP", crv: "X25519", x: w(t) },
+    { kty: "OKP", crv: "X25519", x: d(t) },
     { name: "X25519" },
     !1,
     []
   );
 }
-async function O(t) {
+async function B(t) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", t));
 }
-async function k(t) {
-  const e = await O(A(t));
-  return w(e.subarray(0, 16));
+async function S(t) {
+  const e = await B(C(t));
+  return d(e.subarray(0, 16));
 }
-async function K(t, e, n, r) {
-  const o = await crypto.subtle.deriveBits({ name: "X25519", public: e }, t, 256), a = new Uint8Array(n.length + r.length);
-  a.set(n, 0), a.set(r, n.length);
-  const c = await crypto.subtle.importKey("raw", o, "HKDF", !1, ["deriveKey"]);
+async function v(t, e, n, r) {
+  const o = await crypto.subtle.deriveBits({ name: "X25519", public: e }, t, 256), c = new Uint8Array(n.length + r.length);
+  c.set(n, 0), c.set(r, n.length);
+  const s = await crypto.subtle.importKey("raw", o, "HKDF", !1, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: a, info: R },
-    c,
+    { name: "HKDF", hash: "SHA-256", salt: c, info: K },
+    s,
     { name: "AES-GCM", length: 256 },
     !1,
     ["encrypt", "decrypt"]
   );
 }
-let u = null;
-function _() {
+let p = null;
+function P() {
   return new Promise((t, e) => {
-    const n = indexedDB.open(v, 1);
+    const n = indexedDB.open(x, 1);
     n.onupgradeneeded = () => {
-      n.result.objectStoreNames.contains(d) || n.result.createObjectStore(d, { keyPath: "id" });
+      n.result.objectStoreNames.contains(f) || n.result.createObjectStore(f, { keyPath: "id" });
     }, n.onsuccess = () => t(n.result), n.onerror = () => e(n.error ?? new Error("indexedDB open failed"));
   });
 }
-function P(t) {
+function _(t) {
   return new Promise((e, n) => {
-    const r = t.transaction(d, "readonly").objectStore(d).get(b);
+    const r = t.transaction(f, "readonly").objectStore(f).get(h);
     r.onsuccess = () => e(r.result), r.onerror = () => n(r.error ?? new Error("indexedDB get failed"));
   });
 }
-function B(t, e) {
+function D(t, e) {
   return new Promise((n, r) => {
-    const o = t.transaction(d, "readwrite");
-    o.objectStore(d).put(e), o.oncomplete = () => n(), o.onerror = () => r(o.error ?? new Error("indexedDB put failed"));
+    const o = t.transaction(f, "readwrite");
+    o.objectStore(f).put(e), o.oncomplete = () => n(), o.onerror = () => r(o.error ?? new Error("indexedDB put failed"));
   });
 }
-async function D(t) {
+async function j(t) {
   const e = await crypto.subtle.generateKey({ name: "X25519" }, !1, [
     "deriveBits"
-  ]), n = await crypto.subtle.exportKey("jwk", e.publicKey), r = l(n.x ?? "");
-  return await B(t, { id: b, keyPair: e, pubRaw: r.buffer }), { keyPair: e, pubRaw: r };
+  ]), n = await crypto.subtle.exportKey("jwk", e.publicKey), r = y(n.x ?? "");
+  return await D(t, { id: h, keyPair: e, pubRaw: r.buffer }), { keyPair: e, pubRaw: r };
 }
-async function h() {
-  if (u) return u;
-  const t = await _();
+async function A() {
+  if (p) return p;
+  const t = await P();
   try {
-    const e = await P(t);
-    return e?.keyPair?.privateKey && e.pubRaw ? (u = { keyPair: e.keyPair, pubRaw: new Uint8Array(e.pubRaw) }, u) : (u = await D(t), u);
+    const e = await _(t);
+    return e?.keyPair?.privateKey && e.pubRaw ? (p = { keyPair: e.keyPair, pubRaw: new Uint8Array(e.pubRaw) }, p) : (p = await j(t), p);
   } finally {
     t.close();
   }
 }
-async function E() {
-  const { pubRaw: t } = await h();
-  return p + w(t);
+async function m() {
+  const { pubRaw: t } = await A();
+  return w + d(t);
 }
 async function I() {
-  return k(await E());
+  return S(await m());
 }
-async function x(t) {
-  const { keyPair: e, pubRaw: n } = await h(), r = l(t.epk), o = await C(r), a = await K(e.privateKey, o, r, n), c = l(t.ct), s = l(t.tag), i = new Uint8Array(c.length + s.length);
-  i.set(c, 0), i.set(s, c.length);
-  const f = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: l(t.iv) },
-    a,
-    i
+async function N(t, e) {
+  const n = C(e), r = await E(n), o = await crypto.subtle.generateKey({ name: "X25519" }, !1, [
+    "deriveBits"
+  ]), c = await crypto.subtle.exportKey("jwk", o.publicKey), s = y(c.x ?? ""), u = await v(o.privateKey, r, s, n), a = crypto.getRandomValues(new Uint8Array(12)), l = new TextEncoder().encode(JSON.stringify(t)), i = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: a }, u, l)
+  ), O = i.subarray(0, i.length - 16), k = i.subarray(i.length - 16);
+  return { epk: d(s), iv: d(a), ct: d(O), tag: d(k) };
+}
+async function $(t) {
+  const { keyPair: e, pubRaw: n } = await A(), r = y(t.epk), o = await E(r), c = await v(e.privateKey, o, r, n), s = y(t.ct), u = y(t.tag), a = new Uint8Array(s.length + u.length);
+  a.set(s, 0), a.set(u, s.length);
+  const l = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: y(t.iv) },
+    c,
+    a
   );
-  return JSON.parse(new TextDecoder().decode(f));
+  return JSON.parse(new TextDecoder().decode(l));
 }
-const j = "room-invite";
+const T = "room-invite";
 function U(t) {
-  if (t.type !== j) return null;
+  if (t.type !== T) return null;
   const e = t.sliceJson;
   if (!e || typeof e != "object") return null;
   const n = e.shareCode;
@@ -105,53 +113,53 @@ function U(t) {
   const r = e.title;
   return { shareCode: n, title: typeof r == "string" ? r : "" };
 }
-const $ = 32, T = "cmshare1", F = "cmshare2";
-function M(t) {
+const M = 32, F = "cmshare1", J = "cmshare2";
+function X(t) {
   const e = atob(t), n = new Uint8Array(e.length);
   for (let r = 0; r < e.length; r++) n[r] = e.charCodeAt(r);
   return n;
 }
 function H(t) {
   const e = t.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - t.length % 4) % 4);
-  return M(e);
+  return X(e);
 }
-function N(t) {
-  const e = t.trim().split("."), n = e.length >= 4 && e[0] === F;
-  if (!n && (e.length !== 3 || e[0] !== T)) return null;
+function Y(t) {
+  const e = t.trim().split("."), n = e.length >= 4 && e[0] === J;
+  if (!n && (e.length !== 3 || e[0] !== F)) return null;
   const r = e[1];
   if (!/^[0-9a-f]{16,64}$/.test(r)) return null;
   const o = n ? e.slice(3).join(".") : void 0;
   if (n && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(o)) return null;
   try {
-    const a = H(e[2]);
-    return a.byteLength !== $ ? null : n ? { roomId: r, keyBytes: a, minVersion: o } : { roomId: r, keyBytes: a };
+    const c = H(e[2]);
+    return c.byteLength !== M ? null : n ? { roomId: r, keyBytes: c, minVersion: o } : { roomId: r, keyBytes: c };
   } catch {
     return null;
   }
 }
-const S = "debate-relay-known-rooms";
-function m() {
+const R = "debate-relay-known-rooms";
+function g() {
   try {
-    return JSON.parse(localStorage.getItem(S) || "{}");
+    return JSON.parse(localStorage.getItem(R) || "{}");
   } catch {
     return {};
   }
 }
-function X(t) {
-  localStorage.setItem(S, JSON.stringify(t));
+function z(t) {
+  localStorage.setItem(R, JSON.stringify(t));
 }
-function Y(t) {
+function G(t) {
   let e = "";
   for (const n of t) e += String.fromCharCode(n);
   return btoa(e);
 }
-async function J() {
-  return E();
+async function V() {
+  return m();
 }
-async function z() {
+async function q() {
   return I();
 }
-async function g(t, e, n) {
+async function b(t, e, n) {
   try {
     await fetch(`${t}/messages/${encodeURIComponent(n)}`, {
       method: "DELETE",
@@ -160,44 +168,64 @@ async function g(t, e, n) {
   } catch {
   }
 }
-async function G(t, e) {
+async function L(t, e) {
   const n = t.replace(/\/$/, ""), r = await I(), o = await fetch(`${n}/messages?recipient=${encodeURIComponent(r)}`, {
     headers: { Authorization: `Bearer ${e}` }
   });
   if (!o.ok) throw new Error(`mailbox ${o.status}`);
-  const a = await o.json(), c = m();
-  for (const s of a.messages || []) {
-    let i = null;
+  const c = await o.json(), s = g();
+  for (const u of c.messages || []) {
+    let a = null;
     try {
-      i = await x(s);
+      a = await $(u);
     } catch {
-      await g(n, e, s.msgId);
+      await b(n, e, u.msgId);
       continue;
     }
-    const f = i && i.item ? U(i.item) : null;
-    if (f) {
-      const y = N(f.shareCode);
-      y && (c[y.roomId] = {
-        roomId: y.roomId,
-        title: f.title,
-        keyB64: Y(y.keyBytes),
-        at: Date.now()
+    const l = a && a.item ? U(a.item) : null;
+    if (l) {
+      const i = Y(l.shareCode);
+      i && (s[i.roomId] = {
+        roomId: i.roomId,
+        title: l.title,
+        keyB64: G(i.keyBytes),
+        at: Date.now(),
+        senderCode: typeof a?.senderCode == "string" ? a.senderCode : s[i.roomId]?.senderCode,
+        senderName: typeof a?.senderName == "string" && a.senderName ? a.senderName : s[i.roomId]?.senderName
       });
     }
-    await g(n, e, s.msgId);
+    await b(n, e, u.msgId);
   }
-  return X(c), Object.values(c);
+  return z(s), Object.values(s);
 }
-function V() {
-  return Object.values(m());
+async function W(t, e, n, r, o = "Coach") {
+  const c = t.replace(/\/$/, ""), s = {
+    senderCode: await m(),
+    senderName: o,
+    item: {
+      label: "Coach note",
+      type: "text",
+      // A ProseMirror slice CardMirror can insert (paragraph of text).
+      sliceJson: { content: [{ type: "paragraph", content: [{ type: "text", text: String(r) }] }] }
+    }
+  }, u = await N(s, n), a = { v: 1, recipientCode: await S(n), sentAt: Date.now(), ...u };
+  return (await fetch(`${c}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${e}`, "Content-Type": "application/json" },
+    body: JSON.stringify(a)
+  })).ok;
 }
-function q(t) {
-  return m()[t];
+function Z() {
+  return Object.values(g());
+}
+function Q(t) {
+  return g()[t];
 }
 export {
-  J as getMemberCode,
-  z as getRoutingId,
-  q as knownRoom,
-  V as knownRooms,
-  G as pollInvites
+  V as getMemberCode,
+  q as getRoutingId,
+  Q as knownRoom,
+  Z as knownRooms,
+  L as pollInvites,
+  W as sendNote
 };

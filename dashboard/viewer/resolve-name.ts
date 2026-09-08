@@ -184,6 +184,19 @@ export async function getRoomDoc(opts: ResolveOpts): Promise<RoomDoc> {
   };
 }
 
+/** Rebuild a room's ProseMirror document node (or null when empty). Used by
+ *  the export/history tools that need the node itself, not rendered HTML. */
+export async function getRoomNode(opts: ResolveOpts): Promise<PMNode | null> {
+  const key = await importRoomKey(opts.keyBytes);
+  const sealed = await fetchSealed(opts);
+  if (!sealed) return null;
+  return docFromEncrypted(key, sealed.head, sealed.tail);
+}
+
+/** Low-level fetch of a room's sealed snapshot + tail (exported for the
+ *  history tool, which needs per-update timestamps of its own). */
+export { fetchSealed as fetchSealedBlobs };
+
 /** Convenience: render a doc straight from a pasted share code. */
 export async function getRoomDocFromShareCode(
   supabaseUrl: string,
@@ -223,3 +236,15 @@ export {
   type LiveSnapshot,
   type LiveStatus,
 } from './live-room.js';
+
+// Export (.docx), backup zip, and version-history scrubber (see viewer-tools.ts).
+export {
+  downloadRoomDocx,
+  roomToDocx,
+  backupAllDocx,
+  loadHistory,
+  type BackupEntry,
+  type BackupProgress,
+  type RoomHistory,
+  type HistoryStep,
+} from './viewer-tools.js';

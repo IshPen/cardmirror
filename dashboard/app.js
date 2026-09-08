@@ -590,6 +590,7 @@ function scrollToHeading(id) {
 
 async function openDoc(roomId) {
   stopLive();
+  closeHistory();
   _viewerRoomId = roomId;
   const kr = knownRoom(roomId);
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
@@ -599,6 +600,9 @@ async function openDoc(roomId) {
   const canLive = !!(kr && kr.keyB64 && config && config.relay && config.relaytoken);
   $('viewer-live-btn').classList.toggle('hidden', !canLive);
   $('viewer-live-btn').textContent = '● Go live';
+  // "Note" is available when we captured the author's pairing code on invite.
+  $('viewer-note-btn').classList.toggle('hidden', !(kr && kr.senderCode && config && config.relaytoken));
+  $('viewer-note-bar').classList.add('hidden');
   showViewerMsg('<span class="muted">Loading… (first open downloads the ~1.5 MB decoder)</span>');
   try {
     if (!kr || !kr.keyB64) throw new Error('No key for this room — it must invite the dashboard first.');
@@ -692,8 +696,154 @@ function stopLive() {
 }
 function closeViewer() {
   stopLive();
+  closeHistory();
   _viewerRoomId = null;
   $('viewer-modal').classList.add('hidden');
+}
+
+// ── Viewer tools: export, PDF, backup, history ───────────────────────
+function roomOpts(roomId) {
+  const kr = roomId && knownRoom(roomId);
+  if (!kr || !kr.keyB64) return null;
+  return { supabaseUrl: config.supabase, anonKey: config.anon, roomId, keyBytes: b64ToBytes(kr.keyB64) };
+}
+
+async function exportViewerDocx() {
+  const opts = roomOpts(_viewerRoomId);
+  if (!opts) { setLiveStatus('error', 'No key for this room — it must invite the dashboard first.'); return; }
+  const btn = $('viewer-docx-btn'); const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    const v = await loadViewer();
+    await v.downloadRoomDocx(opts, $('viewer-title').textContent || 'document');
+  } catch (e) {
+    setLiveStatus('error', String(e.message || e));
+    alert('Could not export: ' + (e.message || e));
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+
+function printViewerPDF() {
+  const f = viewerFrame();
+  try {
+    if (f && f.contentWindow) { f.contentWindow.focus(); f.contentWindow.print(); }
+    else window.print();
+  } catch { window.print(); }
+}
+
+// Version history scrubber.
+let _hist = null, _histFrame = null, _histReady = false, _histFragment = '', _histTimer = null;
+function swapFrameEditor(frame, html) {
+  try { const ed = frame && frame.contentDocument && frame.contentDocument.getElementById('editor'); if (ed) ed.innerHTML = html; } catch { /* reloading */ }
+}
+async function openHistory() {
+  const opts = roomOpts(_viewerRoomId);
+  if (!opts) { setLiveStatus('error', 'No key for this room — it must invite the dashboard first.'); return; }
+  stopLive();
+  $('viewer-live-btn').classList.add('hidden');
+  $('viewer-history-bar').classList.remove('hidden');
+  $('hist-label').textContent = 'Loading history…';
+  try {
+    const v = await loadViewer();
+    _hist = await v.loadHistory(opts);
+    const slider = $('hist-slider');
+    slider.max = String(_hist.count - 1);
+    slider.value = String(_hist.count - 1);
+    renderHistAt(_hist.count - 1, true);
+  } catch (e) {
+    $('hist-label').textContent = 'History unavailable: ' + (e.message || e) +
+      ' (needs enable-viewer.sql).';
+  }
+}
+function renderHistAt(i, first) {
+  if (!_hist) return;
+  const idx = Math.max(0, Math.min(_hist.count - 1, +i));
+  const step = _hist.at(idx);
+  if (step.title) $('viewer-title').textContent = step.title;
+  buildOutline(step.outline);
+  const t = _hist.times[idx];
+  const when = idx === 0 ? 'start (compacted)' : (t ? new Date(t).toLocaleString() : 'revision ' + idx);
+  $('hist-label').textContent = `${when}  ·  ${idx + 1}/${_hist.count}`;
+  _histFragment = step.fragment;
+  if (first) {
+    _histFrame = makeViewerFrame();
+    _histReady = false;
+    _histFrame.addEventListener('load', () => { _histReady = true; swapFrameEditor(_histFrame, _histFragment); });
+    _histFrame.srcdoc = step.page;
+  } else if (_histReady) {
+    swapFrameEditor(_histFrame, _histFragment);
+  }
+}
+function toggleHistPlay() {
+  if (_histTimer) { clearInterval(_histTimer); _histTimer = null; $('hist-play').textContent = '▶'; return; }
+  if (!_hist) return;
+  $('hist-play').textContent = '⏸';
+  _histTimer = setInterval(() => {
+    const slider = $('hist-slider');
+    let v = +slider.value + 1;
+    if (v > _hist.count - 1) { v = _hist.count - 1; toggleHistPlay(); }
+    slider.value = String(v); renderHistAt(v, false);
+  }, 600);
+}
+function closeHistory() {
+  if (_histTimer) { clearInterval(_histTimer); _histTimer = null; }
+  if ($('hist-play')) $('hist-play').textContent = '▶';
+  _hist = null; _histFrame = null; _histReady = false; _histFragment = '';
+  const bar = $('viewer-history-bar'); if (bar) bar.classList.add('hidden');
+  const live = $('viewer-live-btn'); if (live) live.classList.remove('hidden');
+}
+function exitHistoryToDoc() {
+  closeHistory();
+  if (_viewerRoomId) openDoc(_viewerRoomId); // reopen the current (latest) doc
+}
+
+async function backupAll() {
+  const store = knownRoomsStore();
+  const ids = Object.keys(store).filter((id) => store[id] && store[id].keyB64);
+  const status = $('backup-status');
+  status.classList.remove('hidden');
+  if (!ids.length) {
+    status.textContent = 'No openable docs yet — students must invite the dashboard into their sessions first.';
+    return;
+  }
+  const entries = ids.map((id) => ({ opts: roomOpts(id), title: store[id].title || id.slice(0, 8) }));
+  const btn = $('backup-btn'); const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Backing up…';
+  status.textContent = `Exporting 0/${entries.length}…`;
+  try {
+    const v = await loadViewer();
+    const ymd = new Date().toISOString().slice(0, 10);
+    const res = await v.backupAllDocx(entries, ymd, (p) => {
+      status.textContent = `Exporting ${p.done}/${p.total}…` + (p.ok ? '' : ` (skipped ${p.name})`);
+    });
+    status.textContent = `Backed up ${res.ok} doc(s)${res.failed ? `, ${res.failed} skipped` : ''} — downloaded debate-relay-backup-${ymd}.zip.`;
+  } catch (e) {
+    status.textContent = 'Backup failed: ' + (e.message || e);
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+
+// Send a plain-text note to the author (arrives in their CardMirror Receive
+// pill). Available when we captured their pairing code from an invite.
+function toggleNoteBar() {
+  const bar = $('viewer-note-bar');
+  const showing = !bar.classList.contains('hidden');
+  bar.classList.toggle('hidden', showing);
+  if (!showing) { $('note-status').textContent = ''; $('note-text').focus(); }
+}
+async function sendNoteNow() {
+  const kr = _viewerRoomId && knownRoom(_viewerRoomId);
+  const status = $('note-status');
+  if (!kr || !kr.senderCode) { status.textContent = 'No author code for this room (they must invite the dashboard first).'; return; }
+  if (!config.relaytoken) { status.textContent = 'Needs the dashboard relay token (Tokens → Dashboard entry).'; return; }
+  const text = $('note-text').value.trim();
+  if (!text) { status.textContent = 'Type a note first.'; return; }
+  const btn = $('note-send'); btn.disabled = true; status.textContent = 'Sending…';
+  try {
+    const m = await loadMember();
+    const ok = await m.sendNote(config.relay, config.relaytoken, kr.senderCode, text, 'Coach');
+    status.textContent = ok ? '✓ Sent — appears in their Receive pill.' : 'The relay rejected the note.';
+    if (ok) $('note-text').value = '';
+  } catch (e) { status.textContent = 'Failed: ' + (e.message || e); }
+  finally { btn.disabled = false; }
 }
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
@@ -1195,6 +1345,17 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('viewer-close').onclick = closeViewer;
   $('viewer-live-btn').onclick = goLive;
+  $('viewer-docx-btn').onclick = exportViewerDocx;
+  $('viewer-pdf-btn').onclick = printViewerPDF;
+  $('viewer-history-btn').onclick = openHistory;
+  $('hist-slider').oninput = (e) => renderHistAt(e.target.value, false);
+  $('hist-play').onclick = toggleHistPlay;
+  $('hist-close').onclick = exitHistoryToDoc;
+  $('backup-btn').onclick = backupAll;
+  $('viewer-note-btn').onclick = toggleNoteBar;
+  $('note-send').onclick = sendNoteNow;
+  $('note-cancel').onclick = () => $('viewer-note-bar').classList.add('hidden');
+  $('note-text').onkeydown = (e) => { if (e.key === 'Enter') sendNoteNow(); };
   $('add-btn').onclick = openAdd;
   $('add-cancel').onclick = closeAdd;
   $('add-save').onclick = submitAdd;
