@@ -875,13 +875,13 @@ function roomPeople(reg, room, parts) {
 function askButton(reg, room, parts) {
   const people = roomPeople(reg, room, parts);
   if (!people.length) {
-    return '<a class="btn-ask disabled" title="No named people on this room yet (needs per-student tokens or a registered owner)">✉️ Ask</a>';
+    return '<a class="btn-ask disabled" title="No named people on this room yet (needs per-student tokens or a registered owner)">Ask</a>';
   }
   const roster = rosterMap();
   const known = people.map((n) => roster.get(n.toLowerCase())).filter(Boolean);
   const missing = people.filter((n) => !roster.get(n.toLowerCase()));
   if (!known.length) {
-    return `<a class="btn-ask disabled" title="No email on file for: ${esc(people.join(', '))} — add them in Settings → Roster">✉️ Ask</a>`;
+    return `<a class="btn-ask disabled" title="No email on file for: ${esc(people.join(', '))} — add them in Settings → Roster">Ask</a>`;
   }
   const label = (reg && reg.label) || 'your session';
   const subject = `CardMirror: access to “${label}”`;
@@ -895,7 +895,7 @@ function askButton(reg, room, parts) {
   const title = missing.length
     ? `Emailing ${known.map((k) => k.name).join(', ')} · no email on file for: ${missing.join(', ')}`
     : `Email ${known.map((k) => k.name).join(', ')}`;
-  return `<a class="btn-ask" href="${esc(href)}" title="${esc(title)}">✉️ Ask</a>`;
+  return `<a class="btn-ask" href="${esc(href)}" title="${esc(title)}">Ask</a>`;
 }
 
 function renderSessions(registry, byId, partsByRoom) {
@@ -1091,7 +1091,7 @@ async function submitAdd() {
 // ── Team tokens (client-side generator; env-JSON model) ──────────────
 // The dashboard can't write Render env, so this manages the people list
 // locally, generates per-person tokens, and hands you the RELAY_TOKENS
-// JSON to paste into Render. It also keeps the ✉️ Ask roster in sync.
+// JSON to paste into Render. It also keeps the Ask roster in sync.
 const SEASON = String(new Date().getFullYear()).slice(2); // e.g. "26"
 
 function genToken(name) {
@@ -1107,7 +1107,7 @@ function team() { return (config && config.team) || []; }
 function persistTeam(list) {
   if (!config) config = { relay: '', supabase: '', anon: '' };
   config.team = list;
-  // Keep the ✉️ Ask roster in sync: every person with an email.
+  // Keep the Ask roster in sync: every person with an email.
   config.roster = list.filter((p) => p.email).map((p) => `${p.name} = ${p.email}`).join('\n');
   // Auto-wire the dashboard's own poll token from a "Dashboard" entry.
   const dash = list.find((p) => /dashboard/i.test(p.name));
