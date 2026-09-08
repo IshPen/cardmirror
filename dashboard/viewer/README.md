@@ -3,8 +3,18 @@
 > **The UI is folded into the main dashboard** — the **Open** button on
 > Sessions rows renders a room's document. The standalone viewer page was
 > removed. This folder now holds the shared decoder (`resolve-name.ts`,
-> `getRoomDoc`/`docToHtml`), the committed bundle (`dist/viewer.mjs`) the
-> main dashboard imports, and `enable-viewer.sql`.
+> `getRoomDoc`/`docToHtml`/`renderDocument`/`docOutline`), the live read-only
+> room sync (`live-room.ts` → `startLiveRoom`, reused from the relay's
+> `RoomStream`), the committed bundle (`dist/viewer.mjs`) the main dashboard
+> imports, and `enable-viewer.sql`.
+>
+> **Rendering** injects the editor's real `src/editor/style.css` into an
+> isolated iframe for native fidelity. **Live sync** (`Go live`) streams a
+> room's updates and swaps the `#editor` innerHTML in place (preserving
+> scroll) — read-only; it never posts, so it cannot alter a student's doc.
+> **Editing** (dashboard writes back) is a deliberate future step built on
+> `CollabSession` — not wired here, because a binding bug writing to a live
+> student document risks silent data loss and needs multi-client testing.
 
 Decrypts and renders a room's document **in the coach's browser** — the
 name (first `pocket`/H1) and the full content. Requires a key (from an

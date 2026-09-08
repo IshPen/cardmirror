@@ -343,11 +343,18 @@ function closeMember() { $('member-modal').classList.add('hidden'); }
 
 // Doc viewer modal. Renders the decrypted doc inside an <iframe> so the
 // editor's real stylesheet (global .pmd-* / body / #editor rules) reproduces
-// native CardMirror formatting without leaking into the dashboard page.
+// native CardMirror formatting without leaking into the dashboard page. A
+// heading outline rail navigates it; "Go live" streams edits in real time.
+let _viewerRoomId = null;      // room currently open
+let _liveHandle = null;        // active live subscription (null = static)
+let _liveFrame = null;         // the live iframe
+let _liveFrameReady = false;   // its load event fired
+let _liveFragment = '';        // latest #editor innerHTML awaiting apply
+
 function showViewerMsg(html) {
   $('viewer-body').innerHTML = '<div class="viewer-msg">' + html + '</div>';
 }
-function showViewerDoc(fullHtmlPage) {
+function makeViewerFrame() {
   const body = $('viewer-body');
   body.innerHTML = '';
   const frame = document.createElement('iframe');
@@ -355,12 +362,53 @@ function showViewerDoc(fullHtmlPage) {
   frame.setAttribute('sandbox', 'allow-same-origin'); // styles/fonts, no scripts
   frame.setAttribute('title', 'Document preview');
   body.appendChild(frame);
-  frame.srcdoc = fullHtmlPage;
+  return frame;
 }
+function showViewerDoc(fullHtmlPage) {
+  makeViewerFrame().srcdoc = fullHtmlPage;
+}
+function viewerFrame() {
+  return _liveFrame || $('viewer-body').querySelector('iframe');
+}
+
+// Heading outline rail. Ids match the schema's data-id on each heading, so a
+// click scrolls the rendered iframe to that heading.
+function buildOutline(entries) {
+  const nav = $('viewer-outline');
+  if (!entries || !entries.length) {
+    nav.innerHTML = '<p class="muted small">No headings</p>';
+    return;
+  }
+  nav.innerHTML = '';
+  for (const e of entries) {
+    const a = document.createElement('a');
+    a.className = 'outline-item lvl' + (e.level || 1);
+    a.textContent = e.text || '(untitled)';
+    if (e.id) a.onclick = () => scrollToHeading(e.id);
+    else a.classList.add('disabled');
+    nav.appendChild(a);
+  }
+}
+function scrollToHeading(id) {
+  const frame = viewerFrame();
+  try {
+    const doc = frame && frame.contentDocument;
+    const el = doc && doc.querySelector('[data-id="' + (window.CSS ? CSS.escape(id) : id) + '"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch { /* cross-doc access raced a reload — ignore */ }
+}
+
 async function openDoc(roomId) {
+  stopLive();
+  _viewerRoomId = roomId;
   const kr = knownRoom(roomId);
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
   $('viewer-modal').classList.remove('hidden');
+  $('viewer-outline').innerHTML = '';
+  setLiveStatus(null);
+  const canLive = !!(kr && kr.keyB64 && config && config.relay && config.relaytoken);
+  $('viewer-live-btn').classList.toggle('hidden', !canLive);
+  $('viewer-live-btn').textContent = '● Go live';
   showViewerMsg('<span class="muted">Loading… (first open downloads the ~1.5 MB decoder)</span>');
   try {
     if (!kr || !kr.keyB64) throw new Error('No key for this room — it must invite the dashboard first.');
@@ -369,6 +417,7 @@ async function openDoc(roomId) {
       supabaseUrl: config.supabase, anonKey: config.anon,
       roomId, keyBytes: b64ToBytes(kr.keyB64),
     });
+    if (_viewerRoomId !== roomId) return; // user moved on while decoding
     if (doc.empty) {
       showViewerMsg('<span class="muted">No content returned. Either the room is empty, ' +
         'or <code>dashboard/viewer/enable-viewer.sql</code> hasn’t been run in Supabase (it grants read ' +
@@ -376,6 +425,7 @@ async function openDoc(roomId) {
       return;
     }
     if (doc.title) $('viewer-title').textContent = doc.title;
+    buildOutline(doc.outline);
     // `document` is the fully-styled iframe page; fall back to the bare
     // fragment for an older bundle that predates it.
     if (doc.document) showViewerDoc(doc.document);
@@ -387,7 +437,74 @@ async function openDoc(roomId) {
       'If it says permission/denied, run <code>dashboard/viewer/enable-viewer.sql</code> in Supabase.</div>');
   }
 }
-function closeViewer() { $('viewer-modal').classList.add('hidden'); }
+
+// ── Live sync ────────────────────────────────────────────────────────
+const LIVE_STATUS_TEXT = {
+  connecting: '○ connecting…', live: '● live', offline: '● offline (retrying)',
+  ended: '■ session ended', full: '■ room full', error: '■ live error',
+};
+function setLiveStatus(status, detail) {
+  const el = $('viewer-live-status');
+  if (!status) { el.classList.add('hidden'); el.textContent = ''; return; }
+  el.classList.remove('hidden');
+  el.className = 'live-badge live-' + status;
+  el.textContent = LIVE_STATUS_TEXT[status] || status;
+  if (detail) el.title = detail;
+}
+function applyLiveFragment() {
+  if (!_liveFrame || !_liveFrameReady) return;
+  try {
+    const ed = _liveFrame.contentDocument && _liveFrame.contentDocument.getElementById('editor');
+    if (ed) ed.innerHTML = _liveFragment;
+  } catch { /* frame reloading — the next emit re-applies */ }
+}
+function onLiveDoc(snap) {
+  if (snap.title) $('viewer-title').textContent = snap.title;
+  buildOutline(snap.outline);
+  _liveFragment = snap.fragment;
+  if (snap.first) {
+    _liveFrame = makeViewerFrame();
+    _liveFrameReady = false;
+    _liveFrame.addEventListener('load', () => { _liveFrameReady = true; applyLiveFragment(); });
+    _liveFrame.srcdoc = snap.page; // full page already carries this content
+  } else {
+    applyLiveFragment(); // swap #editor in place — preserves scroll
+  }
+}
+async function goLive() {
+  const roomId = _viewerRoomId;
+  const kr = roomId && knownRoom(roomId);
+  if (!kr || !kr.keyB64) return;
+  if (_liveHandle) { stopLive(); $('viewer-live-btn').textContent = '● Go live'; return; }
+  if (!config.relaytoken) { setLiveStatus('error', 'No dashboard relay token (add a Dashboard entry in Tokens).'); return; }
+  setLiveStatus('connecting');
+  $('viewer-live-btn').textContent = '■ Stop live';
+  try {
+    const v = await loadViewer();
+    const handle = await v.startLiveRoom(
+      { relayUrl: config.relay, token: config.relaytoken, roomId, keyBytes: b64ToBytes(kr.keyB64) },
+      { onDoc: onLiveDoc, onStatus: setLiveStatus },
+    );
+    if (_viewerRoomId !== roomId) { handle.stop(); return; } // moved on mid-connect
+    _liveHandle = handle;
+  } catch (e) {
+    setLiveStatus('error', String(e.message || e));
+    $('viewer-live-btn').textContent = '● Go live';
+  }
+}
+function stopLive() {
+  if (_liveHandle) { try { _liveHandle.stop(); } catch { /* already gone */ } }
+  _liveHandle = null;
+  _liveFrame = null;
+  _liveFrameReady = false;
+  _liveFragment = '';
+  setLiveStatus(null);
+}
+function closeViewer() {
+  stopLive();
+  _viewerRoomId = null;
+  $('viewer-modal').classList.add('hidden');
+}
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
 // The relay only knows names (v2 labels / registry owner), never emails.
@@ -822,6 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('member-status').textContent = 'Checked for invites. Any new rooms now show in Sessions.';
   };
   $('viewer-close').onclick = closeViewer;
+  $('viewer-live-btn').onclick = goLive;
   $('add-btn').onclick = openAdd;
   $('add-cancel').onclick = closeAdd;
   $('add-save').onclick = submitAdd;

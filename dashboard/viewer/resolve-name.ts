@@ -18,6 +18,7 @@ import {
   firstHeading,
 } from '../../src/tools/collab-extract-h1.js';
 import { schema } from '../../src/schema/index.js';
+import { collectHeadings } from '../../src/editor/headings.js';
 import {
   importRoomKey,
   base64ToBytes,
@@ -133,6 +134,25 @@ export function renderDocument(node: PMNode): string {
   );
 }
 
+export interface OutlineItem {
+  id: string | null;
+  text: string;
+  type: string;
+  level: number;
+}
+
+/** Flat heading outline (pocket/hat/block/…) for the viewer's nav rail. The
+ *  ids match the `data-id` the schema toDOM stamps on each heading, so the
+ *  caller can scroll the rendered iframe to `[data-id="…"]`. */
+export function docOutline(node: PMNode): OutlineItem[] {
+  return collectHeadings(node, { skipCite: true }).map((h) => ({
+    id: h.id,
+    text: h.text,
+    type: h.type,
+    level: h.level,
+  }));
+}
+
 export interface RoomDoc {
   title: string | null;
   /** Bare content fragment (schema toDOM), no styling. */
@@ -140,6 +160,8 @@ export interface RoomDoc {
   /** Complete self-contained HTML page for an `<iframe srcdoc>` — native
    *  CardMirror styling. Empty string when the room has no content. */
   document: string;
+  /** Heading outline for the nav rail. */
+  outline: OutlineItem[];
   empty: boolean;
 }
 
@@ -151,12 +173,13 @@ export interface RoomDoc {
 export async function getRoomDoc(opts: ResolveOpts): Promise<RoomDoc> {
   const key = await importRoomKey(opts.keyBytes);
   const sealed = await fetchSealed(opts);
-  if (!sealed) return { title: null, html: '', document: '', empty: true };
+  if (!sealed) return { title: null, html: '', document: '', outline: [], empty: true };
   const node = await docFromEncrypted(key, sealed.head, sealed.tail);
   return {
     title: firstHeading(node),
     html: docToHtml(node),
     document: renderDocument(node),
+    outline: docOutline(node),
     empty: false,
   };
 }
@@ -189,3 +212,14 @@ export async function resolveRoomNameFromShareCode(
   });
   return { roomId: decoded.roomId, name };
 }
+
+// Live read-only room sync + outline (see live-room.ts). Re-exported here so
+// the dashboard imports one bundle entry. (ES module cycle with live-room is
+// runtime-only — both sides call each other's functions lazily.)
+export {
+  startLiveRoom,
+  type LiveOpts,
+  type LiveHandle,
+  type LiveSnapshot,
+  type LiveStatus,
+} from './live-room.js';

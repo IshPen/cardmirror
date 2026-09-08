@@ -90,18 +90,31 @@ configured** and never reads ciphertext (it emails a fixed string plus a
 truncated routing id). It sends via [Resend](https://resend.com)'s HTTP API
 using only the Python stdlib (no new dependency).
 
-Set all three to enable, plus optionally scope it to your dashboard:
+Set **just the email + key** to enable (the sender has a safe default that
+needs no domain), plus optionally scope it to your dashboard:
 
 ```
-RELAY_NOTIFY_EMAIL=coach@school.edu          # who to email
-RELAY_NOTIFY_FROM=relay@your-verified-domain # a Resend-verified sender
-RELAY_RESEND_KEY=re_xxx                       # Resend API key
-RELAY_NOTIFY_ROUTES=<dashboard routing id>    # optional: only notify for this
-                                              # mailbox (shown in the dashboard's
-                                              # Member panel → Advanced). Omit to
-                                              # notify for EVERY recipient — only
-                                              # safe on a single-coach relay.
+RELAY_NOTIFY_EMAIL=coach@school.edu    # who to email (your Resend-account email)
+RELAY_RESEND_KEY=re_xxx                 # Resend API key — the only signup needed
+RELAY_NOTIFY_FROM=...                   # optional. Defaults to Resend's shared
+                                        # test sender (onboarding@resend.dev),
+                                        # which delivers to your own account
+                                        # address with NO domain setup. Set a
+                                        # verified-domain sender like
+                                        # "Debate Relay <no-reply@yourteam.org>"
+                                        # for production / arbitrary recipients.
+RELAY_NOTIFY_ROUTES=<dashboard routing id>  # optional: only notify for this
+                                        # mailbox (shown in the dashboard's
+                                        # Member panel → Advanced). Omit to
+                                        # notify for EVERY recipient — only safe
+                                        # on a single-coach relay.
 ```
+
+> **"Can I send from the `onrender.com` domain?"** Not reliably — you don't
+> control its DNS, so there's no SPF/DKIM and mail gets spam-filtered, and
+> Render has no SMTP. Use Resend (above): `onboarding@resend.dev` works
+> instantly for self-alerts, or verify a domain you own for a real
+> `no-reply@` sender.
 
 The relay can't distinguish an invite from any other sealed card, but a
 coach dashboard only ever *receives* invites, so watching its routing id is

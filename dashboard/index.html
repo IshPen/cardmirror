@@ -258,9 +258,15 @@
     <div class="modal-card card viewer-card">
       <div class="card-head">
         <h2 id="viewer-title">Document</h2>
+        <span id="viewer-live-status" class="live-badge hidden"></span>
+        <span style="flex:1"></span>
+        <button id="viewer-live-btn" class="btn small" type="button">● Go live</button>
         <button id="viewer-close" class="btn ghost small" type="button">Close</button>
       </div>
-      <div id="viewer-body" class="viewer-body">Loading…</div>
+      <div class="viewer-split">
+        <nav id="viewer-outline" class="viewer-outline" aria-label="Document outline"></nav>
+        <div id="viewer-body" class="viewer-body">Loading…</div>
+      </div>
     </div>
   </div>
 

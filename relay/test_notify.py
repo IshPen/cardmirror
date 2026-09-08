@@ -44,11 +44,18 @@ def test_inert_by_default():
     server._maybe_notify_invite("routing-abc")  # must not raise
 
 
-def test_disabled_when_partially_configured(monkeypatch):
+def test_disabled_without_api_key(monkeypatch):
+    # EMAIL alone isn't enough — the API key is required (FROM has a default).
     monkeypatch.setattr(server, "NOTIFY_EMAIL", "coach@example.com")
-    monkeypatch.setattr(server, "NOTIFY_FROM", "")
-    monkeypatch.setattr(server, "NOTIFY_RESEND_KEY", "re_test")
+    monkeypatch.setattr(server, "NOTIFY_RESEND_KEY", "")
     assert server._notify_enabled() is False
+
+
+def test_enabled_with_email_and_key_only(monkeypatch):
+    # FROM defaults to the Resend test sender, so EMAIL + KEY suffices.
+    monkeypatch.setattr(server, "NOTIFY_EMAIL", "coach@example.com")
+    monkeypatch.setattr(server, "NOTIFY_RESEND_KEY", "re_test")
+    assert server._notify_enabled() is True
 
 
 def test_fires_for_watched_route(monkeypatch):

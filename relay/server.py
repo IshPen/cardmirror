@@ -243,7 +243,11 @@ ROOM_IDLE_GC = timedelta(days=7)          # must exceed travel day + tournament 
 # EMAIL/FROM/RESEND_KEY are set. Sends via Resend's HTTP API using only the
 # stdlib (no new dependency); never touches ciphertext.
 NOTIFY_EMAIL = os.getenv("RELAY_NOTIFY_EMAIL", "").strip()        # recipient (the coach)
-NOTIFY_FROM = os.getenv("RELAY_NOTIFY_FROM", "").strip()          # a Resend-verified sender
+# Sender. Defaults to Resend's shared test sender, which needs NO domain setup
+# and delivers to your own Resend-account address — ideal for coach self-alerts.
+# Set a verified-domain sender (e.g. "Debate Relay <no-reply@yourteam.org>") for
+# production / arbitrary recipients.
+NOTIFY_FROM = os.getenv("RELAY_NOTIFY_FROM", "").strip() or "Debate Relay <onboarding@resend.dev>"
 NOTIFY_RESEND_KEY = os.getenv("RELAY_RESEND_KEY", "").strip()     # Resend API key
 # Comma-separated routing ids to watch (the dashboard's routing id, shown in
 # its Member panel). Empty = watch every recipient — only safe when this relay
@@ -254,7 +258,8 @@ _last_notify: dict[str, float] = {}    # recipient → monotonic time of last se
 
 
 def _notify_enabled() -> bool:
-    return bool(NOTIFY_EMAIL and NOTIFY_FROM and NOTIFY_RESEND_KEY)
+    # FROM has a safe default, so only the recipient + API key are required.
+    return bool(NOTIFY_EMAIL and NOTIFY_RESEND_KEY)
 
 
 def _send_notify_email(recipient: str) -> None:
