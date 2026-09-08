@@ -12,9 +12,12 @@
 > isolated iframe for native fidelity. **Live sync** (`Go live`) streams a
 > room's updates and swaps the `#editor` innerHTML in place (preserving
 > scroll) — read-only; it never posts, so it cannot alter a student's doc.
-> **Editing** (dashboard writes back) is a deliberate future step built on
-> `CollabSession` — not wired here, because a binding bug writing to a live
-> student document risks silent data loss and needs multi-client testing.
+> **Editing** (`editor.ts` → `mountEditor`, EXPERIMENTAL) mounts a real
+> ProseMirror editor bound to a live `CollabSession` inside the viewer iframe;
+> local edits and **inline comments** (native `comment_range` mark + the
+> collab-comments CRDT sync) flow back to the room. It is **off by default**
+> behind a warning — it writes to live student docs, so verify it with two
+> clients before real use.
 
 Decrypts and renders a room's document **in the coach's browser** — the
 name (first `pocket`/H1) and the full content. Requires a key (from an

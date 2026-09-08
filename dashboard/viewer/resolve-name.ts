@@ -248,3 +248,11 @@ export {
   type RoomHistory,
   type HistoryStep,
 } from './viewer-tools.js';
+
+// EXPERIMENTAL editable co-editing + inline comments (see editor.ts).
+export {
+  mountEditor,
+  type EditOpts,
+  type EditHandle,
+  type EditStatus,
+} from './editor.js';

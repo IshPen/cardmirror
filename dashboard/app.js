@@ -591,6 +591,8 @@ function scrollToHeading(id) {
 async function openDoc(roomId) {
   stopLive();
   closeHistory();
+  teardownEdit();
+  editRestoreChrome();
   _viewerRoomId = roomId;
   const kr = knownRoom(roomId);
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
@@ -600,6 +602,8 @@ async function openDoc(roomId) {
   const canLive = !!(kr && kr.keyB64 && config && config.relay && config.relaytoken);
   $('viewer-live-btn').classList.toggle('hidden', !canLive);
   $('viewer-live-btn').textContent = '● Go live';
+  // Edit (experimental) needs a key + the dashboard's relay token, same as live.
+  $('viewer-edit-btn').classList.toggle('hidden', !canLive);
   // "Note" is available when we captured the author's pairing code on invite.
   $('viewer-note-btn').classList.toggle('hidden', !(kr && kr.senderCode && config && config.relaytoken));
   $('viewer-note-bar').classList.add('hidden');
@@ -697,6 +701,8 @@ function stopLive() {
 function closeViewer() {
   stopLive();
   closeHistory();
+  teardownEdit();
+  editRestoreChrome();
   _viewerRoomId = null;
   $('viewer-modal').classList.add('hidden');
 }
@@ -844,6 +850,75 @@ async function sendNoteNow() {
     if (ok) $('note-text').value = '';
   } catch (e) { status.textContent = 'Failed: ' + (e.message || e); }
   finally { btn.disabled = false; }
+}
+
+// ── Editable mode (EXPERIMENTAL) ─────────────────────────────────────
+// Writes to the LIVE shared document. Reuses CardMirror's audited collab
+// session; still, verify with two windows before real use.
+let _editHandle = null;
+const EDIT_WARNING =
+  'Experimental — editing writes to the LIVE shared document.\n\n' +
+  'Your edits and inline comments sync to everyone in the session in real time. ' +
+  'This has not been battle-tested; try it with two windows before using it on ' +
+  'real work, and keep CardMirror as the source of truth.\n\nStart editing?';
+function setEditStatus(status, detail) {
+  const el = $('edit-status');
+  if (!el) return;
+  el.className = 'live-badge live-' + status;
+  el.textContent = status === 'live' ? '● editing (synced)'
+    : status === 'connecting' ? '○ connecting…' : status;
+  if (detail) el.title = detail;
+}
+function editRestoreChrome() {
+  $('viewer-edit-bar').classList.add('hidden');
+  $('viewer-edit-btn').textContent = 'Edit';
+  $('viewer-history-btn').classList.remove('hidden');
+  $('viewer-live-btn').classList.remove('hidden');
+}
+async function teardownEdit() {
+  if (_editHandle) { const h = _editHandle; _editHandle = null; try { await h.stop(); } catch { /* down */ } }
+}
+async function exitEdit() {
+  await teardownEdit();
+  editRestoreChrome();
+  if (_viewerRoomId) openDoc(_viewerRoomId); // back to the read-only render
+}
+async function startEdit() {
+  if (_editHandle) { exitEdit(); return; }
+  const opts = roomOpts(_viewerRoomId);
+  if (!opts) { setLiveStatus('error', 'No key for this room — it must invite the dashboard first.'); return; }
+  if (!config.relaytoken) { setLiveStatus('error', 'Needs the dashboard relay token (Tokens → Dashboard entry).'); return; }
+  if (!window.confirm(EDIT_WARNING)) return;
+  stopLive(); closeHistory();
+  $('viewer-history-btn').classList.add('hidden');
+  $('viewer-live-btn').classList.add('hidden');
+  $('viewer-edit-bar').classList.remove('hidden');
+  $('viewer-edit-btn').textContent = 'Stop editing';
+  setEditStatus('connecting');
+  const frame = makeViewerFrame();
+  try {
+    const v = await loadViewer();
+    const handle = await v.mountEditor(
+      frame,
+      { relayUrl: config.relay, token: config.relaytoken, roomId: _viewerRoomId, keyBytes: opts.keyBytes },
+      { onStatus: setEditStatus },
+    );
+    if (!$('viewer-body').contains(frame)) { await handle.stop(); return; } // moved on mid-connect
+    _editHandle = handle;
+  } catch (e) {
+    setEditStatus('error', String(e.message || e));
+    showViewerMsg('<span class="error">Could not start editing: ' + esc(String(e.message || e)) + '</span>' +
+      '<div class="muted small" style="margin-top:8px">Serve over http; the room must be live and reachable.</div>');
+    editRestoreChrome();
+  }
+}
+function addCommentFlow() {
+  if (!_editHandle) return;
+  const input = $('comment-text');
+  const text = (input.value || '').trim();
+  if (!_editHandle.hasSelection()) { setEditStatus('live', 'Select text in the document first, then Comment.'); return; }
+  if (!text) { input.focus(); return; }
+  if (_editHandle.addComment(text)) { input.value = ''; setEditStatus('live', 'Comment added — synced to the session.'); }
 }
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
@@ -1352,6 +1427,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('hist-play').onclick = toggleHistPlay;
   $('hist-close').onclick = exitHistoryToDoc;
   $('backup-btn').onclick = backupAll;
+  $('viewer-edit-btn').onclick = startEdit;
+  $('edit-close').onclick = exitEdit;
+  $('comment-add').onclick = addCommentFlow;
+  $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;
   $('note-cancel').onclick = () => $('viewer-note-bar').classList.add('hidden');
