@@ -1625,6 +1625,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('viewer-close').onclick = closeViewer;
   $('viewer-live-btn').onclick = goLive;
   $('viewer-comments-btn').onclick = toggleComments;
+  const ss = $('sessions-search');
+  if (ss) ss.oninput = () => {
+    const q = (ss.value || '').toLowerCase();
+    for (const tr of document.querySelectorAll('#sessions-body tr')) {
+      tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+    }
+  };
   initNavLevelToggles();
   $('viewer-docx-btn').onclick = exportViewerDocx;
   $('viewer-pdf-btn').onclick = printViewerPDF;

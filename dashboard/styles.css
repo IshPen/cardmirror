@@ -368,3 +368,61 @@ table.team td.mono { font-family: ui-monospace, monospace; font-size: 11px; colo
 
 .foot { text-align: center; padding: 24px; }
 @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } .row { flex-direction: column; } }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Polish layer — depth, motion, and refined states (2026-09)
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Sidebar: soft vertical gradient + an active accent bar */
+.sidebar { background: linear-gradient(180deg, var(--bg-2), color-mix(in srgb, var(--bg-2) 82%, var(--panel))); }
+.nav-item { position: relative; }
+.nav-item.active::before {
+  content: ''; position: absolute; left: -12px; top: 7px; bottom: 7px; width: 3px;
+  border-radius: 0 3px 3px 0; background: linear-gradient(180deg, var(--primary), var(--accent));
+}
+.brand-mark { box-shadow: 0 6px 18px -8px var(--primary); }
+
+/* Cards + stats: hover lift and a top accent on KPIs */
+.card { transition: transform var(--ease), box-shadow var(--ease), border-color var(--ease); }
+.card.wide:hover, #panel-health:hover, #panel-storage:hover { box-shadow: var(--shadow-lg); border-color: var(--border-2); }
+.stat { position: relative; overflow: hidden;
+  transition: transform var(--ease), box-shadow var(--ease), border-color var(--ease); }
+.stat::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--accent)); opacity: .85; }
+.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--border-2); }
+.stat-num { line-height: 1.05; }
+
+/* Tables: gentle row hover */
+tbody tr { transition: background var(--ease); }
+tbody tr:hover td { background: color-mix(in srgb, var(--primary) 6%, transparent); }
+
+/* Sticky content header gets a faint gradient wash */
+.content-head { background:
+  linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, transparent), color-mix(in srgb, var(--bg) 66%, transparent)); }
+
+/* Meter: subtle sheen on the fill */
+.meter { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent); }
+.meter-fill { background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+  background-size: 200% 100%; }
+
+/* Buttons: springier press + focus glow on primary */
+.btn:active { transform: translateY(1px) scale(.99); }
+.btn.primary:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft), 0 6px 16px -8px var(--primary); }
+
+/* Chips + badges: lift on hover */
+.chip:hover { border-color: var(--border-2); }
+.group-badge, .live-badge { transition: background var(--ease), color var(--ease); }
+
+/* Modal entrance */
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+.modal-card { animation: modal-in 180ms cubic-bezier(.2,.6,.2,1); }
+.modal { animation: fade-in 140ms ease; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Sessions quick-filter */
+.panel-toolbar { display: flex; align-items: center; gap: 8px; }
+.search-input { padding: 6px 11px 6px 30px; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 13px; width: 190px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239aa3b8' stroke-width='2' stroke-linecap='round'><circle cx='7' cy='7' r='5'/><path d='M11 11l3 3'/></svg>");
+  background-repeat: no-repeat; background-position: 9px center; transition: border-color var(--ease), width var(--ease); }
+.search-input:focus { outline: none; border-color: var(--primary); width: 230px; }
