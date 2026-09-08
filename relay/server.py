@@ -234,6 +234,73 @@ MAX_UPDATES_PER_PAGE = 200
 MAX_STREAMS_PER_ROOM = 10                 # participant ceiling, enforced at stream connect
 ROOM_IDLE_GC = timedelta(days=7)          # must exceed travel day + tournament weekend
 
+# ── Optional invite email notification (opt-in; inert unless configured) ──
+# When a mailbox message lands for a WATCHED routing id, best-effort email a
+# coach so they learn a doc was shared even with the dashboard closed. The
+# relay cannot read the (encrypted) bundle and cannot tell an invite from a
+# shared card — but a coach dashboard only ever RECEIVES invites, so watching
+# its routing id is effectively "notify on invite". Fully inert unless all of
+# EMAIL/FROM/RESEND_KEY are set. Sends via Resend's HTTP API using only the
+# stdlib (no new dependency); never touches ciphertext.
+NOTIFY_EMAIL = os.getenv("RELAY_NOTIFY_EMAIL", "").strip()        # recipient (the coach)
+NOTIFY_FROM = os.getenv("RELAY_NOTIFY_FROM", "").strip()          # a Resend-verified sender
+NOTIFY_RESEND_KEY = os.getenv("RELAY_RESEND_KEY", "").strip()     # Resend API key
+# Comma-separated routing ids to watch (the dashboard's routing id, shown in
+# its Member panel). Empty = watch every recipient — only safe when this relay
+# serves a single coach mailbox.
+NOTIFY_ROUTES = {r.strip() for r in os.getenv("RELAY_NOTIFY_ROUTES", "").split(",") if r.strip()}
+NOTIFY_COOLDOWN_SECONDS = 60           # at most one email per recipient per minute
+_last_notify: dict[str, float] = {}    # recipient → monotonic time of last send
+
+
+def _notify_enabled() -> bool:
+    return bool(NOTIFY_EMAIL and NOTIFY_FROM and NOTIFY_RESEND_KEY)
+
+
+def _send_notify_email(recipient: str) -> None:
+    """Best-effort Resend send on a daemon thread. Swallows all errors so it
+    can never affect the store-and-forward hot path."""
+    try:
+        import urllib.request
+
+        body = json.dumps({
+            "from": NOTIFY_FROM,
+            "to": [NOTIFY_EMAIL],
+            "subject": "Debate Relay: a document was shared with your dashboard",
+            "text": (
+                "A student just shared a document with your coach dashboard.\n\n"
+                "Open the dashboard and click Open on the new session to view it.\n\n"
+                f"(mailbox {recipient[:8]}…)"
+            ),
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=body,
+            headers={"Authorization": f"Bearer {NOTIFY_RESEND_KEY}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        logger.info("[relay] notify email sent for recipient=%s…", recipient[:8])
+    except Exception as exc:  # noqa: BLE001 — best effort; never break delivery
+        logger.warning("[relay] notify email failed: %s", exc)
+
+
+def _maybe_notify_invite(recipient: str) -> None:
+    """Fire an invite notification email if configured, watched, and not in a
+    cooldown window. Returns immediately; the send runs on a daemon thread."""
+    if not _notify_enabled():
+        return
+    if NOTIFY_ROUTES and recipient not in NOTIFY_ROUTES:
+        return
+    now = time.monotonic()
+    last = _last_notify.get(recipient, 0.0)
+    if now - last < NOTIFY_COOLDOWN_SECONDS:
+        return
+    _last_notify[recipient] = now
+    threading.Thread(target=_send_notify_email, args=(recipient,), daemon=True).start()
+
+
 # routing code → open stream queues (single-worker only; see module doc)
 _streams: dict[str, set["asyncio.Queue[dict]"]] = {}
 
@@ -638,6 +705,8 @@ def post_message(
     if _loop is not None:
         message = {**payload, "msgId": msg_id, "receivedAt": _epoch_ms(row.created_at)}
         _loop.call_soon_threadsafe(_push_to_streams, recipient, message)
+    # Opt-in coach email (inert unless RELAY_NOTIFY_* is configured).
+    _maybe_notify_invite(recipient)
     return JSONResponse({"msgId": msg_id}, status_code=202)
 
 

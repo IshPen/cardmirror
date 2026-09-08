@@ -10,6 +10,7 @@
  * This module is bundled (Vite) with loro-crdt's WASM, so the built
  * output must be SERVED over http(s) — WASM will not load from file://.
  */
+/// <reference path="./vite-raw.d.ts" />
 import { DOMSerializer, type Node as PMNode } from 'prosemirror-model';
 import {
   firstHeadingFromEncrypted,
@@ -22,6 +23,14 @@ import {
   base64ToBytes,
   decodeShareCode,
 } from '../../src/editor/collab/collab-crypto.js';
+// The editor's real stylesheet, inlined at build time. This is what makes
+// the viewer match native CardMirror: highlights, emphasis, heading sizes,
+// card layout — all live in these global `.pmd-*` classes and `:root` vars.
+// Fonts are referenced by relative url() that won't resolve in the iframe,
+// but each @font-face carries local() fallbacks (Calibri→Carlito, etc.), so
+// common document fonts still render; the custom accessibility fonts fall
+// back to the system stack. (Cosmetic-only; structure/colour are exact.)
+import EDITOR_CSS from '../../src/editor/style.css?raw';
 
 export interface ResolveOpts {
   supabaseUrl: string;
@@ -75,8 +84,10 @@ export async function resolveRoomName(opts: ResolveOpts): Promise<string | null>
   return firstHeadingFromEncrypted(key, sealed.head, sealed.tail);
 }
 
-/** Serialize a rebuilt CardMirror document to HTML using the schema's
- *  toDOM rules. Browser/jsdom only (needs `document`). */
+/** Serialize a rebuilt CardMirror document to the schema's toDOM HTML —
+ *  the bare content fragment, no stylesheet. Browser/jsdom only (needs
+ *  `document`). Kept for callers that embed the fragment themselves; the
+ *  viewer uses `renderDocument` (below) for native-styled output. */
 export function docToHtml(node: PMNode): string {
   const serializer = DOMSerializer.fromSchema(schema);
   const fragment = serializer.serializeFragment(node.content);
@@ -85,22 +96,69 @@ export function docToHtml(node: PMNode): string {
   return div.innerHTML;
 }
 
+/** Minimal page chrome around the editor CSS: a centered document column
+ *  on white, plus fallbacks for the few vars the editor otherwise sets from
+ *  JS settings (undertag colour), and disabling `content-visibility` so
+ *  headings/cards aren't lazy-skipped inside a short scrolling iframe. */
+const VIEWER_BASE_CSS = `
+  html, body { margin: 0; background: #fff; }
+  #editor {
+    max-width: 8.5in;
+    margin: 0 auto;
+    padding: 24px 32px 96px;
+    color: #111;
+    font-family: 'Calibri', 'Carlito', 'Times New Roman', 'Tinos', serif;
+    --pmd-color-undertag: #555;
+  }
+  .pmd-pocket, .pmd-hat, .pmd-block, .pmd-card, .pmd-analytic-unit {
+    content-visibility: visible;
+  }
+`;
+
+/** Render a rebuilt document as a COMPLETE, self-contained HTML page that
+ *  reproduces native CardMirror styling — the editor's own stylesheet plus
+ *  a `#editor.ProseMirror` wrapper (the class the CSS scopes some rules to).
+ *  Meant to be dropped into an `<iframe srcdoc>` so the editor's global
+ *  rules stay isolated from the dashboard. */
+export function renderDocument(node: PMNode): string {
+  const body = docToHtml(node);
+  return (
+    '<!doctype html><html data-theme="light"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<style>' + EDITOR_CSS + '</style>' +
+    '<style>' + VIEWER_BASE_CSS + '</style>' +
+    '</head><body><div id="editor" class="ProseMirror pmd-viewer-doc">' +
+    body +
+    '</div></body></html>'
+  );
+}
+
 export interface RoomDoc {
   title: string | null;
+  /** Bare content fragment (schema toDOM), no styling. */
   html: string;
+  /** Complete self-contained HTML page for an `<iframe srcdoc>` — native
+   *  CardMirror styling. Empty string when the room has no content. */
+  document: string;
   empty: boolean;
 }
 
 /**
- * Fetch, decrypt, and render a room's whole document to HTML — the
- * viewer's Goal 2. `empty` is true when the room has no content yet.
+ * Fetch, decrypt, and render a room's whole document — the viewer's Goal 2.
+ * Returns both the bare `html` fragment and a fully-styled `document` page
+ * (for an iframe). `empty` is true when the room has no content yet.
  */
 export async function getRoomDoc(opts: ResolveOpts): Promise<RoomDoc> {
   const key = await importRoomKey(opts.keyBytes);
   const sealed = await fetchSealed(opts);
-  if (!sealed) return { title: null, html: '', empty: true };
+  if (!sealed) return { title: null, html: '', document: '', empty: true };
   const node = await docFromEncrypted(key, sealed.head, sealed.tail);
-  return { title: firstHeading(node), html: docToHtml(node), empty: false };
+  return {
+    title: firstHeading(node),
+    html: docToHtml(node),
+    document: renderDocument(node),
+    empty: false,
+  };
 }
 
 /** Convenience: render a doc straight from a pasted share code. */

@@ -19,7 +19,9 @@ or host the folder on GitHub Pages / Netlify drop / any static host.
 | **Add session** | Paste a share code, give it a label/owner/event |
 | **✉️ Ask for access** | On each live room, emails the people on it (via a `mailto:`) to ask for the share code |
 | **Member** (Path B) | Shows the dashboard's own member code; students *invite* it into a session and it learns the doc name |
-| **Open** | On rooms the dashboard was invited to, renders the decrypted document |
+| **Request access** | In the Member panel, emails a student your dashboard code with add-and-invite steps ("Your coach is requesting access…") |
+| **Open** | On rooms the dashboard was invited to, renders the decrypted document with **native CardMirror styling** (in an isolated iframe) |
+| **New-invite alerts** | When a doc is shared, a banner appears (and a desktop notification, if enabled). Server-side email is opt-in — see `relay/README.md` |
 
 ### Core vs. served-only features
 

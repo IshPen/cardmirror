@@ -81,6 +81,35 @@ authenticated Supabase coach — see `dashboard/relay-tokens.sql`) can add
 or revoke people **instantly, with no env edit and no redeploy**. Nothing
 changes for deployments that never populate the table.
 
+## Email a coach when a doc is shared (optional, opt-in)
+
+A coach dashboard is invited into sessions by receiving sealed mailbox
+messages. The relay can email the coach when one arrives — so they learn a
+doc was shared even with the dashboard closed. This is **inert unless
+configured** and never reads ciphertext (it emails a fixed string plus a
+truncated routing id). It sends via [Resend](https://resend.com)'s HTTP API
+using only the Python stdlib (no new dependency).
+
+Set all three to enable, plus optionally scope it to your dashboard:
+
+```
+RELAY_NOTIFY_EMAIL=coach@school.edu          # who to email
+RELAY_NOTIFY_FROM=relay@your-verified-domain # a Resend-verified sender
+RELAY_RESEND_KEY=re_xxx                       # Resend API key
+RELAY_NOTIFY_ROUTES=<dashboard routing id>    # optional: only notify for this
+                                              # mailbox (shown in the dashboard's
+                                              # Member panel → Advanced). Omit to
+                                              # notify for EVERY recipient — only
+                                              # safe on a single-coach relay.
+```
+
+The relay can't distinguish an invite from any other sealed card, but a
+coach dashboard only ever *receives* invites, so watching its routing id is
+effectively "notify on invite." Sends are best-effort on a daemon thread
+(failures are logged, never block delivery) and rate-limited to one email
+per recipient per minute. Leave the vars unset to keep the original
+behavior.
+
 ## Notes
 
 - One `RELAY_TOKEN` covers both features — card sharing and co-editing

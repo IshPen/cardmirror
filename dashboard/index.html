@@ -21,6 +21,9 @@
     </div>
   </header>
 
+  <!-- New-invite notifications (populated by app.js when a doc is shared) -->
+  <div id="notice-stack" class="notice-stack" aria-live="polite"></div>
+
   <!-- First-run / reconfigure screen -->
   <section id="config-panel" class="config hidden">
     <div class="card config-card">
@@ -215,13 +218,38 @@
       </p>
       <div class="code" id="member-code">…</div>
       <p class="error hidden" id="member-note"></p>
+
+      <div class="request-box">
+        <div class="sync-title">Request access from a student</div>
+        <p class="muted small">
+          Emails a student this code with steps to add it and invite you —
+          “Your coach is requesting access to view your document…”. Nothing is
+          shared until they invite it.
+        </p>
+        <div class="request-row">
+          <select id="member-request-to" aria-label="Student to email"></select>
+          <button id="member-request-btn" class="btn small" type="button">✉️ Email request</button>
+        </div>
+        <p class="muted small" id="member-request-status"></p>
+      </div>
+
       <div class="config-actions">
         <button id="member-copy" class="btn small" type="button">Copy code</button>
         <button id="member-poll" class="btn small" type="button">Poll for invites now</button>
+        <button id="member-notify" class="btn small" type="button">🔔 Desktop alerts</button>
         <span style="flex:1"></span>
         <button id="member-close" class="btn ghost small" type="button">Close</button>
       </div>
       <p class="muted small" id="member-status"></p>
+      <details class="member-advanced">
+        <summary class="muted small">Advanced: email me when a doc is shared (server-side)</summary>
+        <p class="muted small">
+          Desktop alerts fire only while this dashboard is open. To be emailed
+          even when it’s closed, set <code>RELAY_NOTIFY_*</code> on the relay
+          (see relay README). Watch this dashboard’s routing id:
+        </p>
+        <div class="code" id="member-routing">…</div>
+      </details>
     </div>
   </div>
 

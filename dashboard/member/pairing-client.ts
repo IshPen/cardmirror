@@ -52,6 +52,13 @@ export async function getMemberCode(): Promise<string> {
   return webOwnPublicCode();
 }
 
+/** This dashboard's mailbox routing id (SHA256(pubkey)[0:16], base64url) —
+ *  what the relay sees as `recipientCode`. Used to configure a server-side
+ *  email notification (RELAY_NOTIFY_ROUTES) for invites to this dashboard. */
+export async function getRoutingId(): Promise<string> {
+  return webOwnRoutingId();
+}
+
 interface RelayMessage extends SealedBundle { msgId: string; }
 
 async function deleteMessage(base: string, token: string, id: string): Promise<void> {

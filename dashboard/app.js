@@ -162,6 +162,66 @@ function knownRoomsStore() {
 }
 function knownRoom(roomId) { return knownRoomsStore()[roomId]; }
 
+// ── New-invite notifications ─────────────────────────────────────────
+// When a student shares a doc with the dashboard, a new entry lands in the
+// known-rooms store. We alert the coach in-page (a dismissible banner) and,
+// if they've granted permission, via a desktop notification. This is the
+// zero-setup path — it fires only while the dashboard is open. (Emailing the
+// coach when the dashboard is CLOSED needs a server-side sender; see the
+// opt-in relay hook + RELAY_NOTIFY_* env in relay/README.md.)
+const NOTIFIED_KEY = 'debate-relay-notified-rooms';
+function notifiedList() {
+  try { return JSON.parse(localStorage.getItem(NOTIFIED_KEY) || 'null'); } catch { return null; }
+}
+function saveNotified(ids) { localStorage.setItem(NOTIFIED_KEY, JSON.stringify(ids)); }
+
+// Compare the current known-rooms against the set we've already announced and
+// surface anything new. First run ever seeds the baseline silently so we don't
+// announce rooms invited before this feature existed.
+function announceNewInvites() {
+  const known = knownRoomsStore();
+  const ids = Object.keys(known);
+  const prev = notifiedList();
+  if (prev === null) { saveNotified(ids); return; } // baseline, no burst
+  const seen = new Set(prev);
+  const fresh = ids.filter((id) => !seen.has(id));
+  if (!fresh.length) return;
+  for (const id of fresh) {
+    const title = (known[id] && known[id].title) || 'Untitled document';
+    showInviteNotice(id, title);
+    desktopNotify(title);
+  }
+  saveNotified(ids);
+}
+
+function showInviteNotice(roomId, title) {
+  const stack = $('notice-stack');
+  if (!stack) return;
+  const bar = document.createElement('div');
+  bar.className = 'notice';
+  const msg = document.createElement('span');
+  msg.className = 'notice-msg';
+  msg.textContent = '🔔 New document shared: ' + title;
+  const open = document.createElement('button');
+  open.className = 'btn small';
+  open.textContent = 'Open';
+  open.onclick = () => { bar.remove(); openDoc(roomId); };
+  const dismiss = document.createElement('button');
+  dismiss.className = 'btn ghost small';
+  dismiss.textContent = 'Dismiss';
+  dismiss.onclick = () => bar.remove();
+  bar.append(msg, open, dismiss);
+  stack.appendChild(bar);
+}
+
+function desktopNotify(title) {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification('Debate Relay — new document shared', { body: title });
+    }
+  } catch { /* notifications unsupported / blocked */ }
+}
+
 // Poll the mailbox for new invites (needs the dashboard's own relay token).
 async function pollMemberInvites() {
   if (!config || !config.relay || !config.relaytoken) return;
@@ -169,33 +229,139 @@ async function pollMemberInvites() {
     const m = await loadMember();
     await m.pollInvites(config.relay, config.relaytoken);
   } catch { /* file:// or offline — persisted invites still display */ }
+  announceNewInvites();
+}
+
+// Emailable people = team members (name + email) plus roster entries not
+// already covered. De-duped by lowercased email.
+function emailablePeople() {
+  const out = [];
+  const seen = new Set();
+  const add = (name, email) => {
+    const e = (email || '').trim();
+    if (!e || !e.includes('@') || seen.has(e.toLowerCase())) return;
+    seen.add(e.toLowerCase());
+    out.push({ name: (name || e).trim(), email: e });
+  };
+  for (const m of team()) if (m.role !== 'coach') add(m.name, m.email);
+  for (const m of team()) if (m.role === 'coach') add(m.name, m.email);
+  for (const { name, email } of rosterMap().values()) add(name, email);
+  return out;
+}
+
+// Populate the "Request access" recipient picker from the roster/team.
+function fillRequestRecipients() {
+  const sel = $('member-request-to');
+  if (!sel) return;
+  const people = emailablePeople();
+  if (!people.length) {
+    sel.innerHTML = '<option value="">No emails yet — add people in Tokens / Roster</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML =
+    people.map((p) => `<option value="${esc(p.email)}">${esc(p.name)} &lt;${esc(p.email)}&gt;</option>`).join('') +
+    (people.length > 1 ? `<option value="${esc(people.map((p) => p.email).join(','))}">— Everyone (${people.length}) —</option>` : '');
+}
+
+// Build a "please share to the dashboard" mailto carrying the member code.
+function buildRequestMailto(emails, name, code) {
+  const who = name && !name.includes(',') && !name.includes('@') ? name : 'there';
+  const subject = 'Access request: share your CardMirror document with your coach';
+  const body =
+    `Hi ${who},\n\n` +
+    `Your coach is requesting access to view your debate document in CardMirror. ` +
+    `Nothing is shared until you invite — this just lets your coach see the document's ` +
+    `name and open it while your session is live.\n\n` +
+    `One-time setup — add your coach's dashboard code:\n` +
+    `  1. In CardMirror, open Settings → Collaboration.\n` +
+    `  2. Add a contact / member code and paste this code:\n\n` +
+    `     ${code}\n\n` +
+    `  3. Save it (name it “Coach” or “Dashboard”).\n\n` +
+    `Then, whenever you want to share:\n` +
+    `  • Be in a live session on the document.\n` +
+    `  • Invite the “Coach” / “Dashboard” contact.\n\n` +
+    `That's it — your coach will then see the doc and can open it.\n`;
+  return `mailto:${emails}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 // Member-code modal.
 async function showMember() {
   $('member-modal').classList.remove('hidden');
   $('member-status').textContent = '';
+  $('member-request-status').textContent = '';
   $('member-note').classList.add('hidden');
   $('member-code').textContent = '…';
+  fillRequestRecipients();
+  $('member-routing').textContent = '…';
   try {
     const m = await loadMember();
     $('member-code').textContent = await m.getMemberCode();
+    m.getRoutingId().then((r) => { $('member-routing').textContent = r; }).catch(() => {});
   } catch {
     $('member-code').textContent = '(unavailable)';
+    $('member-routing').textContent = '(unavailable)';
     $('member-note').textContent =
       'Serve the dashboard over http to enable the member identity — it can’t run from a file://. ' +
       'Try: python -m http.server 8000, then open http://localhost:8000/dashboard/';
     $('member-note').classList.remove('hidden');
   }
 }
+
+// Ask the browser for desktop-notification permission (needs a user gesture,
+// hence a button). Once granted, announceNewInvites() will pop native alerts.
+async function enableDesktopAlerts() {
+  const status = $('member-status');
+  if (typeof Notification === 'undefined') { status.textContent = 'This browser has no notification support.'; return; }
+  if (Notification.permission === 'granted') { status.textContent = 'Desktop alerts already on.'; return; }
+  if (Notification.permission === 'denied') { status.textContent = 'Alerts are blocked — enable them in your browser’s site settings.'; return; }
+  try {
+    const p = await Notification.requestPermission();
+    status.textContent = p === 'granted' ? 'Desktop alerts on — you’ll be notified when a doc is shared.' : 'Alerts not enabled.';
+  } catch { status.textContent = 'Could not request notification permission.'; }
+}
+
+// Open the coach's mail client with a pre-filled "share to the dashboard"
+// request. Needs the member code (shown above) and a picked recipient.
+function sendAccessRequest() {
+  const sel = $('member-request-to');
+  const emails = sel && sel.value;
+  const code = ($('member-code').textContent || '').trim();
+  const status = $('member-request-status');
+  if (!emails) { status.textContent = 'Pick a student first (or add emails in Tokens / Roster).'; return; }
+  if (!code || code === '…' || code === '(unavailable)') {
+    status.textContent = 'Member code isn’t ready — serve the dashboard over http, then reopen this panel.';
+    return;
+  }
+  const picked = sel.options[sel.selectedIndex];
+  const name = picked && picked.text.includes('<') ? picked.text.split('<')[0].trim() : '';
+  window.location.href = buildRequestMailto(emails, name, code);
+  status.textContent = 'Opening your email client…';
+}
 function closeMember() { $('member-modal').classList.add('hidden'); }
 
-// Doc viewer modal.
+// Doc viewer modal. Renders the decrypted doc inside an <iframe> so the
+// editor's real stylesheet (global .pmd-* / body / #editor rules) reproduces
+// native CardMirror formatting without leaking into the dashboard page.
+function showViewerMsg(html) {
+  $('viewer-body').innerHTML = '<div class="viewer-msg">' + html + '</div>';
+}
+function showViewerDoc(fullHtmlPage) {
+  const body = $('viewer-body');
+  body.innerHTML = '';
+  const frame = document.createElement('iframe');
+  frame.className = 'viewer-frame';
+  frame.setAttribute('sandbox', 'allow-same-origin'); // styles/fonts, no scripts
+  frame.setAttribute('title', 'Document preview');
+  body.appendChild(frame);
+  frame.srcdoc = fullHtmlPage;
+}
 async function openDoc(roomId) {
   const kr = knownRoom(roomId);
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
-  $('viewer-body').textContent = 'Loading… (first open downloads the ~1.5 MB decoder)';
   $('viewer-modal').classList.remove('hidden');
+  showViewerMsg('<span class="muted">Loading… (first open downloads the ~1.5 MB decoder)</span>');
   try {
     if (!kr || !kr.keyB64) throw new Error('No key for this room — it must invite the dashboard first.');
     const v = await loadViewer();
@@ -204,18 +370,21 @@ async function openDoc(roomId) {
       roomId, keyBytes: b64ToBytes(kr.keyB64),
     });
     if (doc.empty) {
-      $('viewer-body').innerHTML = '<span class="muted">No content returned. Either the room is empty, ' +
+      showViewerMsg('<span class="muted">No content returned. Either the room is empty, ' +
         'or <code>dashboard/viewer/enable-viewer.sql</code> hasn’t been run in Supabase (it grants read ' +
-        'access to the encrypted bytes).</span>';
+        'access to the encrypted bytes).</span>');
       return;
     }
     if (doc.title) $('viewer-title').textContent = doc.title;
-    $('viewer-body').innerHTML = doc.html;
+    // `document` is the fully-styled iframe page; fall back to the bare
+    // fragment for an older bundle that predates it.
+    if (doc.document) showViewerDoc(doc.document);
+    else showViewerMsg(doc.html);
   } catch (e) {
-    $('viewer-body').innerHTML =
+    showViewerMsg(
       '<span class="error">' + esc(String(e.message || e)) + '</span>' +
       '<div class="muted small" style="margin-top:8px">If a module failed to load, serve the dashboard over http. ' +
-      'If it says permission/denied, run <code>dashboard/viewer/enable-viewer.sql</code> in Supabase.</div>';
+      'If it says permission/denied, run <code>dashboard/viewer/enable-viewer.sql</code> in Supabase.</div>');
   }
 }
 function closeViewer() { $('viewer-modal').classList.add('hidden'); }
@@ -640,6 +809,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('member-btn').onclick = showMember;
   $('member-close').onclick = closeMember;
+  $('member-request-btn').onclick = sendAccessRequest;
+  $('member-notify').onclick = enableDesktopAlerts;
   $('member-copy').onclick = async () => {
     const ok = await copyText($('member-code').textContent || '');
     $('member-status').textContent = ok ? 'Member code copied — give it to students to invite.' : '';

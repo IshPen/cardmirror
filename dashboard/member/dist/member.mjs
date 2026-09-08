@@ -1,4 +1,4 @@
-const p = "cmk1.", I = new TextEncoder().encode("cardmirror-pairing-v1"), v = "cardmirror-web-pairing", d = "keys", b = "x25519-v1";
+const p = "cmk1.", R = new TextEncoder().encode("cardmirror-pairing-v1"), v = "cardmirror-web-pairing", d = "keys", b = "x25519-v1";
 function w(t) {
   const e = t instanceof Uint8Array ? t : new Uint8Array(t);
   let n = "";
@@ -25,16 +25,16 @@ async function C(t) {
 async function O(t) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", t));
 }
-async function R(t) {
+async function k(t) {
   const e = await O(A(t));
   return w(e.subarray(0, 16));
 }
-async function k(t, e, n, r) {
+async function K(t, e, n, r) {
   const o = await crypto.subtle.deriveBits({ name: "X25519", public: e }, t, 256), a = new Uint8Array(n.length + r.length);
   a.set(n, 0), a.set(r, n.length);
   const c = await crypto.subtle.importKey("raw", o, "HKDF", !1, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: a, info: I },
+    { name: "HKDF", hash: "SHA-256", salt: a, info: R },
     c,
     { name: "AES-GCM", length: 256 },
     !1,
@@ -42,7 +42,7 @@ async function k(t, e, n, r) {
   );
 }
 let u = null;
-function K() {
+function _() {
   return new Promise((t, e) => {
     const n = indexedDB.open(v, 1);
     n.onupgradeneeded = () => {
@@ -50,30 +50,30 @@ function K() {
     }, n.onsuccess = () => t(n.result), n.onerror = () => e(n.error ?? new Error("indexedDB open failed"));
   });
 }
-function _(t) {
+function P(t) {
   return new Promise((e, n) => {
     const r = t.transaction(d, "readonly").objectStore(d).get(b);
     r.onsuccess = () => e(r.result), r.onerror = () => n(r.error ?? new Error("indexedDB get failed"));
   });
 }
-function P(t, e) {
+function B(t, e) {
   return new Promise((n, r) => {
     const o = t.transaction(d, "readwrite");
     o.objectStore(d).put(e), o.oncomplete = () => n(), o.onerror = () => r(o.error ?? new Error("indexedDB put failed"));
   });
 }
-async function B(t) {
+async function D(t) {
   const e = await crypto.subtle.generateKey({ name: "X25519" }, !1, [
     "deriveBits"
   ]), n = await crypto.subtle.exportKey("jwk", e.publicKey), r = l(n.x ?? "");
-  return await P(t, { id: b, keyPair: e, pubRaw: r.buffer }), { keyPair: e, pubRaw: r };
+  return await B(t, { id: b, keyPair: e, pubRaw: r.buffer }), { keyPair: e, pubRaw: r };
 }
 async function h() {
   if (u) return u;
-  const t = await K();
+  const t = await _();
   try {
-    const e = await _(t);
-    return e?.keyPair?.privateKey && e.pubRaw ? (u = { keyPair: e.keyPair, pubRaw: new Uint8Array(e.pubRaw) }, u) : (u = await B(t), u);
+    const e = await P(t);
+    return e?.keyPair?.privateKey && e.pubRaw ? (u = { keyPair: e.keyPair, pubRaw: new Uint8Array(e.pubRaw) }, u) : (u = await D(t), u);
   } finally {
     t.close();
   }
@@ -82,11 +82,11 @@ async function E() {
   const { pubRaw: t } = await h();
   return p + w(t);
 }
-async function D() {
-  return R(await E());
+async function I() {
+  return k(await E());
 }
 async function x(t) {
-  const { keyPair: e, pubRaw: n } = await h(), r = l(t.epk), o = await C(r), a = await k(e.privateKey, o, r, n), c = l(t.ct), s = l(t.tag), i = new Uint8Array(c.length + s.length);
+  const { keyPair: e, pubRaw: n } = await h(), r = l(t.epk), o = await C(r), a = await K(e.privateKey, o, r, n), c = l(t.ct), s = l(t.tag), i = new Uint8Array(c.length + s.length);
   i.set(c, 0), i.set(s, c.length);
   const f = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: l(t.iv) },
@@ -148,6 +148,9 @@ function Y(t) {
 async function J() {
   return E();
 }
+async function z() {
+  return I();
+}
 async function g(t, e, n) {
   try {
     await fetch(`${t}/messages/${encodeURIComponent(n)}`, {
@@ -157,8 +160,8 @@ async function g(t, e, n) {
   } catch {
   }
 }
-async function z(t, e) {
-  const n = t.replace(/\/$/, ""), r = await D(), o = await fetch(`${n}/messages?recipient=${encodeURIComponent(r)}`, {
+async function G(t, e) {
+  const n = t.replace(/\/$/, ""), r = await I(), o = await fetch(`${n}/messages?recipient=${encodeURIComponent(r)}`, {
     headers: { Authorization: `Bearer ${e}` }
   });
   if (!o.ok) throw new Error(`mailbox ${o.status}`);
@@ -185,15 +188,16 @@ async function z(t, e) {
   }
   return X(c), Object.values(c);
 }
-function G() {
+function V() {
   return Object.values(m());
 }
-function V(t) {
+function q(t) {
   return m()[t];
 }
 export {
   J as getMemberCode,
-  V as knownRoom,
-  G as knownRooms,
-  z as pollInvites
+  z as getRoutingId,
+  q as knownRoom,
+  V as knownRooms,
+  G as pollInvites
 };
