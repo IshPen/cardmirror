@@ -268,11 +268,13 @@ tbody tr:last-child td { border-bottom: none; }
   position: fixed; inset: 0; background: rgba(0,0,0,.5);
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 20;
 }
-.modal-card { width: 100%; max-width: 480px; }
+/* Cap height so a long modal (e.g. a big team list) never pushes its footer
+   buttons off-screen — the card scrolls internally instead. */
+.modal-card { width: 100%; max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; }
 .tokens-card { max-width: 680px; }
 .code { font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all;
   background: var(--panel-2); padding: 10px 12px; border-radius: 8px; margin: 8px 0; }
-.viewer-card { max-width: 1040px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; }
+.viewer-card { max-width: 1040px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
 /* Split: heading outline rail + document iframe. The document renders inside
    an <iframe> (native editor CSS, isolated); .viewer-msg carries plain
    loading/empty/error states. */
