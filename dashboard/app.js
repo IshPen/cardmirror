@@ -936,6 +936,13 @@ function clearFormattingFlow() {
   if (!_editHandle) return;
   setEditStatus('live', _editHandle.clearFormatting() ? 'Formatting cleared.' : 'Nothing to clear here.');
 }
+function applyFmt(name, attrs) {
+  if (_editHandle) _editHandle.applyMark(name, attrs);
+}
+function applyHighlight() {
+  const color = ($('fmt-hl-color') && $('fmt-hl-color').value) || 'yellow';
+  applyFmt('highlight', { color });
+}
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
 // The relay only knows names (v2 labels / registry owner), never emails.
@@ -1450,6 +1457,12 @@ document.addEventListener('DOMContentLoaded', () => {
   $('head-hat').onclick = () => applyHeading('hat');
   $('head-block').onclick = () => applyHeading('block');
   $('head-clear').onclick = clearFormattingFlow;
+  $('fmt-bold').onclick = () => applyFmt('bold');
+  $('fmt-italic').onclick = () => applyFmt('italic');
+  $('fmt-underline').onclick = () => applyFmt('underline_mark');
+  $('fmt-cite').onclick = () => applyFmt('cite_mark');
+  $('fmt-emphasis').onclick = () => applyFmt('emphasis_mark');
+  $('fmt-highlight').onclick = applyHighlight;
   $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;

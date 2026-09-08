@@ -386,18 +386,36 @@
         <button id="note-cancel" class="btn ghost small" type="button">Cancel</button>
         <span id="note-status" class="muted small"></span>
       </div>
-      <div id="viewer-edit-bar" class="history-bar hidden">
+      <div id="viewer-edit-bar" class="edit-bar hidden">
         <span id="edit-status" class="live-badge live-connecting">editing</span>
-        <span class="head-btns" role="group" aria-label="Heading level">
+        <span class="tb-group" role="group" aria-label="Formatting">
+          <button id="fmt-bold" class="btn ghost small" type="button" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button id="fmt-italic" class="btn ghost small" type="button" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button id="fmt-underline" class="btn ghost small" type="button" title="Underline (F9)"><u>U</u></button>
+          <button id="fmt-cite" class="btn ghost small" type="button" title="Cite (F8)">Cite</button>
+          <button id="fmt-emphasis" class="btn ghost small" type="button" title="Emphasis (F10)">Emph</button>
+          <button id="fmt-highlight" class="btn ghost small" type="button" title="Highlight (F11)">HL</button>
+          <select id="fmt-hl-color" class="mini-select" aria-label="Highlight color" title="Highlight color">
+            <option value="yellow">yellow</option>
+            <option value="green">green</option>
+            <option value="cyan">cyan</option>
+            <option value="magenta">magenta</option>
+            <option value="red">red</option>
+            <option value="blue">blue</option>
+            <option value="none">none</option>
+          </select>
+        </span>
+        <span class="tb-group" role="group" aria-label="Heading level">
           <button id="head-pocket" class="btn ghost small" type="button" title="Pocket / H1 (F4)">Pocket</button>
           <button id="head-hat" class="btn ghost small" type="button" title="Hat / H2 (F5)">Hat</button>
           <button id="head-block" class="btn ghost small" type="button" title="Block / H3 (F6)">Block</button>
           <button id="head-clear" class="btn ghost small" type="button" title="Clear formatting → plain text (F12)">Clear</button>
         </span>
-        <input id="comment-text" class="note-input" type="text" placeholder="Select text, then type an inline comment…" />
-        <button id="comment-add" class="btn small" type="button">Comment</button>
+        <span class="tb-group tb-comment">
+          <input id="comment-text" class="note-input" type="text" placeholder="Select text, then type a comment…" />
+          <button id="comment-add" class="btn small" type="button">Comment</button>
+        </span>
         <span style="flex:1"></span>
-        <span class="muted small" title="Ctrl+Z undo · Ctrl+Y redo">⌃Z/⌃Y</span>
         <button id="edit-close" class="btn ghost small" type="button">Stop editing</button>
       </div>
       <div id="viewer-history-bar" class="history-bar hidden">

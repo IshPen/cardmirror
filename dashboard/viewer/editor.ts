@@ -16,7 +16,7 @@
 import { EditorState, type Command, type Transaction } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
-import { baseKeymap } from 'prosemirror-commands';
+import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { createNodeFromLoroObj, LoroUndoPlugin, undo, redo } from 'loro-prosemirror';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../src/schema/index.js';
@@ -106,6 +106,24 @@ function clearFormattingCmd(): Command {
   };
 }
 
+// Inline mark toggles (bold/italic/cite/underline/emphasis/highlight). Safe —
+// pure toggleMark, no structure change, works anywhere including inside cards.
+// The named-style marks (cite/underline/emphasis) exclude each other in the
+// schema, so toggling one clears the others automatically. Simpler than the
+// app's context-aware variants (which pick body-vs-structural marks and strip
+// direct formatting); the core apply/remove behaviour matches.
+export const HIGHLIGHT_COLORS = ['yellow', 'green', 'cyan', 'magenta', 'red', 'blue', 'none'];
+function markCommand(name: string, attrs?: Record<string, unknown>): Command {
+  const type = schema.marks[name];
+  return type ? toggleMark(type, attrs) : () => false;
+}
+/** F-key mark toggle that always claims the key (so F8–F11 don't hit browser
+ *  defaults while editing). */
+function fKeyMark(name: string, attrs?: Record<string, unknown>): Command {
+  const base = markCommand(name, attrs);
+  return (state, dispatch, view) => { base(state, dispatch, view); return true; };
+}
+
 export interface EditOpts {
   relayUrl: string;
   token: string;
@@ -126,6 +144,9 @@ export interface EditHandle {
   setHeading: (typeName: string) => HeadingResult;
   /** Clear formatting (F12): strip marks + heading→paragraph. */
   clearFormatting: () => boolean;
+  /** Toggle an inline mark on the selection (bold/italic/cite_mark/
+   *  underline_mark/emphasis_mark/highlight). Works inside cards. */
+  applyMark: (name: string, attrs?: Record<string, unknown>) => boolean;
   /** True while text is selected (for enabling the comment control). */
   hasSelection: () => boolean;
   stop: () => Promise<void>;
@@ -191,6 +212,11 @@ export async function mountEditor(
         F4: setDocHeading('pocket'), F5: setDocHeading('hat'), F6: setDocHeading('block'),
         F12: clearFormattingCmd(),
       }),
+      keymap({
+        'Mod-b': markCommand('bold'), 'Mod-i': markCommand('italic'),
+        F8: fKeyMark('cite_mark'), F9: fKeyMark('underline_mark'),
+        F10: fKeyMark('emphasis_mark'), F11: fKeyMark('highlight', { color: 'yellow' }),
+      }),
       keymap(baseKeymap),
     ],
   });
@@ -201,7 +227,7 @@ export async function mountEditor(
   // iframe so the editor's bindings win; propagation still reaches PM.
   try {
     idoc.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (/^F([4-7]|12)$/.test(e.key)) e.preventDefault();
+      if (/^F([4-9]|1[0-2])$/.test(e.key)) e.preventDefault();
     }, true);
   } catch { /* older browsers */ }
 
@@ -231,6 +257,14 @@ export async function mountEditor(
       view.dispatch(tr);
       view.focus();
       return true;
+    },
+    applyMark(name, attrs) {
+      if (!view) return false;
+      const type = schema.marks[name];
+      if (!type) return false;
+      const ok = toggleMark(type, attrs)(view.state, view.dispatch.bind(view), view);
+      view.focus();
+      return ok;
     },
     addComment(text) {
       if (!view) return false;

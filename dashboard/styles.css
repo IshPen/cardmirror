@@ -297,6 +297,15 @@ tbody tr:last-child td { border-bottom: none; }
 .history-bar { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--border); }
 .head-btns { display: inline-flex; gap: 4px; }
 .head-btns .btn { padding: 4px 9px; }
+/* Editing toolbar — wraps so a long row of controls never clips. */
+.edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 4px; border-top: 1px solid var(--border); }
+.tb-group { display: inline-flex; align-items: center; gap: 4px; }
+.tb-group + .tb-group { padding-left: 8px; border-left: 1px solid var(--border); }
+.tb-group .btn { padding: 4px 9px; }
+.tb-comment { flex: 1; min-width: 200px; }
+.tb-comment .note-input { min-width: 120px; }
+#fmt-bold b, #fmt-italic i, #fmt-underline u { font-size: 13px; }
 .note-input { flex: 1; padding: 8px 11px; border-radius: 8px; background: var(--panel-2);
   border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 14px; }
 .note-input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
