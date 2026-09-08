@@ -1392,6 +1392,49 @@ function openTokens() {
 }
 function closeTokens() { $('tokens-modal').classList.add('hidden'); }
 
+// ── Setup wizard (connect screen) ────────────────────────────────────
+function setWizStatus(id, state, msg) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'wiz-status ' + (state || '');
+  el.textContent = msg || '';
+}
+async function testSupabase() {
+  const url = ($('cfg-supabase').value || '').trim();
+  const key = ($('cfg-anon').value || '').trim();
+  if (!url || !key) { setWizStatus('supabase-status', 'fail', 'Enter the Project URL and anon key first.'); return; }
+  setWizStatus('supabase-status', 'testing', 'Testing…');
+  try {
+    const res = await fetch(url.replace(/\/$/, '') + '/rest/v1/relay_rooms?select=id&limit=1',
+      { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+    if (res.ok) { setWizStatus('supabase-status', 'ok', '✓ Connected — tables + RLS look good.'); return; }
+    if (res.status === 401) { setWizStatus('supabase-status', 'fail', 'Key rejected (401) — double-check the anon key.'); return; }
+    const t = (await res.text()).slice(0, 120);
+    setWizStatus('supabase-status', 'fail', `HTTP ${res.status} — did you run setup.sql? ${t}`);
+  } catch {
+    setWizStatus('supabase-status', 'fail', 'Could not reach Supabase — check the Project URL.');
+  }
+}
+async function testRelay() {
+  const url = ($('cfg-relay').value || '').trim();
+  if (!url) { setWizStatus('relay-status', 'fail', 'Enter the relay URL first.'); return; }
+  const note = /\/relay\/?$/.test(url) ? '' : ' (tip: it should end in /relay)';
+  setWizStatus('relay-status', 'testing', 'Testing…' + note);
+  try {
+    const res = await fetch(url.replace(/\/$/, '') + '/health', { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.ok) setWizStatus('relay-status', 'ok', '✓ Relay is up.' + note);
+    else setWizStatus('relay-status', 'fail', `Responded HTTP ${res.status}${note || ' — check the URL ends in /relay.'}`);
+  } catch {
+    setWizStatus('relay-status', 'fail', 'Unreachable — if it was idle, Render may be waking it (~60s). Retry.');
+  }
+}
+function genDashboardToken() {
+  const rand = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  $('cfg-relaytoken').value = 'Dashboard' + String(new Date().getFullYear()).slice(2) + '-' + rand;
+  setWizStatus('token-status', 'ok', 'Generated — add it to your relay’s RELAY_TOKENS with role "coach", or paste your shared RELAY_TOKEN instead.');
+}
+
 // ── Wiring ───────────────────────────────────────────────────────────
 function showConfig() {
   if (config) {
@@ -1553,6 +1596,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('add-cancel').onclick = closeAdd;
   $('add-save').onclick = submitAdd;
   $('cfg-cancel').onclick = () => { if (config) showDashboard(); };
+  if ($('test-supabase')) $('test-supabase').onclick = testSupabase;
+  if ($('test-relay')) $('test-relay').onclick = testRelay;
+  if ($('gen-token')) $('gen-token').onclick = genDashboardToken;
   $('add-code').addEventListener('input', () => {
     const id = parseShareCode($('add-code').value);
     $('add-parsed').textContent = id ? `Room ID kept: ${id.slice(0, 12)}…  (key discarded)` : '';

@@ -10,41 +10,91 @@
 <body>
   <!-- Off-canvas / first-run config sits above the app shell -->
 
-  <!-- First-run / reconfigure screen -->
+  <!-- First-run / reconfigure screen — guided setup wizard -->
   <section id="config-panel" class="config hidden">
-    <div class="card config-card">
-      <h2>Connect your dashboard</h2>
-      <p class="muted">
-        These stay in this browser only (localStorage) — nothing is sent
-        anywhere except the two services you name below. The Supabase
-        <strong>anon</strong> key is meant to be public; it is safe here
-        because Row-Level Security restricts it to reading room metadata.
-        Do <strong>not</strong> paste a Postgres connection string or a
-        service-role key.
-      </p>
-      <label>Relay base URL
-        <input id="cfg-relay" type="url" placeholder="https://debate-relay.onrender.com/relay" />
-        <small class="muted">Ends in <code>/relay</code>. The same URL your team pastes into CardMirror.</small>
-      </label>
-      <label>Supabase project URL
-        <input id="cfg-supabase" type="url" placeholder="https://abcdefgh.supabase.co" />
-      </label>
-      <label>Supabase anon (public) key
-        <input id="cfg-anon" type="text" placeholder="eyJhbGciOi..." />
-      </label>
-      <label>Dashboard relay token <span class="muted">(optional — enables invites &amp; doc viewing)</span>
-        <input id="cfg-relaytoken" type="text" placeholder="Dashboard26-…" />
-        <small class="muted">The dashboard's own token (add a “Dashboard” entry in the Tokens panel).
-          Lets it poll for invites and read docs. Stays in this browser only. Requires serving over http.</small>
-      </label>
-      <label>Roster (optional) — one <code>Name = email</code> per line
-        <textarea id="cfg-roster" rows="4" placeholder="Maya = maya@school.edu&#10;Alex = alex@school.edu"></textarea>
-        <small class="muted">Maps the names v2 attributes to rooms (owner / created-by / participants)
-          to an email, so the “Ask for access” button can reach them. Stays in this browser only —
-          never sent to Supabase.</small>
-      </label>
+    <div class="card config-card wizard">
+      <div class="wiz-head">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.2L4 17.2V4z"/><path d="M8 9h8M8 12h5"/></svg>
+        </span>
+        <div>
+          <h2>Set up your dashboard</h2>
+          <p class="muted small">About 10 minutes. Everything you enter stays in this browser (localStorage) — nothing is sent anywhere except the two services below.</p>
+        </div>
+      </div>
+
+      <!-- Step 1 — Supabase -->
+      <div class="wiz-step">
+        <div class="wiz-step-head">
+          <span class="wiz-num">1</span>
+          <h3>Supabase</h3>
+          <a class="wiz-link" href="https://supabase.com/dashboard/projects" target="_blank" rel="noopener">Open Supabase ↗</a>
+        </div>
+        <p class="muted small">
+          Create a free project, then in <strong>SQL Editor</strong> paste and run
+          <a href="setup.sql" target="_blank" rel="noopener"><code>setup.sql</code></a> once.
+          Copy these two from <strong>Settings → API</strong>. The <strong>anon</strong> key is
+          public by design — never paste a connection string or service-role key here.
+        </p>
+        <label>Project URL
+          <input id="cfg-supabase" type="url" placeholder="https://abcdefgh.supabase.co" />
+        </label>
+        <label>anon (public) key
+          <input id="cfg-anon" type="text" placeholder="eyJhbGciOi..." />
+        </label>
+        <div class="wiz-actions">
+          <button id="test-supabase" class="btn small" type="button">Test connection</button>
+          <span id="supabase-status" class="wiz-status"></span>
+        </div>
+      </div>
+
+      <!-- Step 2 — Relay -->
+      <div class="wiz-step">
+        <div class="wiz-step-head">
+          <span class="wiz-num">2</span>
+          <h3>Relay</h3>
+          <a class="wiz-link" href="https://render.com/deploy" target="_blank" rel="noopener">Deploy on Render ↗</a>
+        </div>
+        <p class="muted small">
+          Deploy the relay with the <strong>Deploy to Render</strong> button (see the repo README /
+          <code>docs/setup.md</code>), then paste its URL. It must end in <code>/relay</code> — this is
+          the same URL your team pastes into CardMirror.
+        </p>
+        <label>Relay base URL
+          <input id="cfg-relay" type="url" placeholder="https://debate-relay.onrender.com/relay" />
+        </label>
+        <div class="wiz-actions">
+          <button id="test-relay" class="btn small" type="button">Test relay</button>
+          <span id="relay-status" class="wiz-status"></span>
+        </div>
+      </div>
+
+      <!-- Step 3 — Dashboard token (optional) -->
+      <div class="wiz-step">
+        <div class="wiz-step-head">
+          <span class="wiz-num">3</span>
+          <h3>Dashboard token <span class="muted small">— optional, enables invites / viewing / editing</span></h3>
+        </div>
+        <p class="muted small">
+          The dashboard's own relay token. Simplest: paste your relay's shared
+          <code>RELAY_TOKEN</code>. For per-person tokens, generate one here and add it to
+          <code>RELAY_TOKENS</code> (role <code>coach</code>).
+        </p>
+        <label>Token
+          <span class="row-inline">
+            <input id="cfg-relaytoken" type="text" placeholder="Dashboard26-… or your shared RELAY_TOKEN" />
+            <button id="gen-token" class="btn small" type="button">Generate</button>
+          </span>
+        </label>
+        <span id="token-status" class="wiz-status"></span>
+        <details class="wiz-details">
+          <summary class="muted small">Roster (optional) — one <code>Name = email</code> per line, for the “Ask for access” emails</summary>
+          <textarea id="cfg-roster" rows="4" placeholder="Maya = maya@school.edu&#10;Alex = alex@school.edu"></textarea>
+        </details>
+      </div>
+
       <div class="config-actions">
-        <button id="cfg-save" class="btn primary" type="button">Save &amp; connect</button>
+        <button id="cfg-save" class="btn primary" type="button">Save &amp; open dashboard</button>
         <button id="cfg-cancel" class="btn ghost" type="button">Cancel</button>
       </div>
     </div>

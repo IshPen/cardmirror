@@ -1,0 +1,54 @@
+name: Deploy coach dashboard to GitHub Pages
+
+# Publishes the static coach dashboard (dashboard/) to GitHub Pages so a
+# coach just opens a URL — no serving it themselves, and the Member/viewer/
+# editing bundles all work because Pages is https.
+#
+# ONE-TIME enable (repo owner): Settings → Pages → Build and deployment →
+# Source: "GitHub Actions". Then this runs on every push that touches
+# dashboard/, and the site lands at
+#   https://<your-user>.github.io/<repo>/            (e.g. .../cardmirror/)
+#
+# NOTE: a repo has ONE Pages site. This fork uses it for the dashboard;
+# the upstream `deploy-pages.yml` (a redirect stub for the old web app)
+# only triggers on web-redirect/** changes, so on this fork the dashboard
+# is what stays live. Delete deploy-pages.yml if you want to be certain.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/dashboard-pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The dashboard is fully static with its bundles committed
+      # (member/dist, viewer/dist) — no build step. Publish the folder as-is.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

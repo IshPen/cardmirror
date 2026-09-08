@@ -422,3 +422,26 @@ tbody tr:hover td { background: color-mix(in srgb, var(--primary) 6%, transparen
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239aa3b8' stroke-width='2' stroke-linecap='round'><circle cx='7' cy='7' r='5'/><path d='M11 11l3 3'/></svg>");
   background-repeat: no-repeat; background-position: 9px center; transition: border-color var(--ease), width var(--ease); }
 .search-input:focus { outline: none; border-color: var(--primary); width: 230px; }
+
+/* ── Setup wizard (connect screen) ───────────────────────────────────── */
+.config { padding: 40px 20px; max-width: 640px; margin: 0 auto; }
+.config-card.wizard { max-width: 640px; }
+.wiz-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.wiz-head h2 { margin: 0; }
+.wiz-step { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;
+  margin: 12px 0; background: var(--panel-2); }
+.wiz-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.wiz-step-head h3 { margin: 0; font-size: 15px; }
+.wiz-num { display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 999px;
+  background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; }
+.wiz-link { margin-left: auto; font-size: 13px; white-space: nowrap; }
+.wiz-step label { margin: 10px 0 !important; }
+.wiz-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.wiz-status { font-size: 13px; }
+.wiz-status.ok { color: var(--green); }
+.wiz-status.fail { color: var(--red); }
+.wiz-status.testing { color: var(--muted); }
+.row-inline { display: flex; gap: 8px; align-items: center; }
+.row-inline input { flex: 1; }
+.wiz-details { margin-top: 8px; }
+.wiz-details summary { cursor: pointer; }

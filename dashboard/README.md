@@ -102,19 +102,23 @@ random secret), the list lives in this browser, and the panel keeps the
 > Switching to multi-token mode (env or DB) stops the old shared token
 > working, so every machine must move to its own per-person token.
 
-## Setup
+## Setup (≈10 minutes)
 
-1. Deploy the relay and create the Supabase database (see
-   [`../docs/setup.md`](../docs/setup.md)).
-2. In Supabase → **SQL Editor**, run [`schema.sql`](./schema.sql) once.
-   It creates `dashboard_registry`, turns on RLS, and grants the anon
-   key exactly the two things it needs.
-3. Open the dashboard, click through the connect screen, and paste:
-   - **Relay base URL** — e.g. `https://debate-relay.onrender.com/relay`
-   - **Supabase project URL** — Supabase → Settings → API → *Project URL*
-   - **Supabase anon key** — Supabase → Settings → API → *anon public*
-
-   These are stored in your browser's localStorage only.
+1. **Supabase** — create a free project, then in **SQL Editor** paste and run
+   [`setup.sql`](./setup.sql) **once**. That single script does everything:
+   `dashboard_registry`, Row-Level Security, the doc viewer's ciphertext read,
+   and the optional DB-backed `relay_tokens` table. (It replaces the old
+   `schema.sql` + `relay-tokens.sql` + `enable-viewer.sql` trio — those still
+   exist for reference. It's guarded, so it's safe to run before *or* after the
+   relay's first boot, and to re-run.)
+2. **Relay** — deploy it with the **Deploy to Render** button (see
+   [`../docs/setup.md`](../docs/setup.md)); paste the Supabase pooler
+   connection string as `DATABASE_URL`.
+3. **Dashboard** — open it (hosted, see below, or `index.html`). The connect
+   screen is a **guided wizard**: paste your Supabase Project URL + anon key and
+   your relay URL, hit **Test** on each (it live-checks the connection and the
+   relay's `/health`), optionally **Generate** a dashboard token, then **Save**.
+   Everything is stored in your browser's localStorage only.
 
 > Paste the **anon** key, never the service-role key and never a Postgres
 > connection string. A connection string in browser JavaScript is a
@@ -137,12 +141,21 @@ discarded. That makes it structurally impossible for this page to
 decrypt student work, which is the correct default. Reversing it is a
 deliberate v3 decision (a document viewer), not a config toggle.
 
-## Hosting on GitHub Pages
+## Hosting the dashboard (so coaches just open a URL)
 
-This repo's GitHub Pages already serves the app's redirect stub, so the
-dashboard is intentionally *not* wired into that deploy. To publish it:
+Serving it over **https** (not `file://`) is what makes the Member / viewer /
+editing features work — those bundles need a real origin. Options:
 
-- Easiest: open `dashboard/index.html` from a local clone — it needs no
-  server.
+- **GitHub Pages (recommended):** this fork ships a workflow,
+  [`.github/workflows/dashboard-pages.yml`](../.github/workflows/dashboard-pages.yml),
+  that publishes `dashboard/` to Pages on every push that touches it. **One-time:**
+  repo owner → **Settings → Pages → Build and deployment → Source: "GitHub
+  Actions"**. The dashboard then lives at
+  `https://<your-user>.github.io/<repo>/`. (A repo has one Pages site; the
+  upstream redirect-stub workflow only fires on `web-redirect/**` changes, so on
+  this fork the dashboard is what stays live — delete `deploy-pages.yml` to be
+  certain.)
 - Or drag the `dashboard/` folder onto <https://app.netlify.com/drop>.
-- Or enable Pages on your own copy pointed at `/dashboard`.
+- Or, for a quick local run, `python -m http.server 8000` then open
+  `http://localhost:8000/dashboard/` (opening `index.html` as a file works for
+  the core panels but not Member/viewer/editing).
