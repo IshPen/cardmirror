@@ -388,10 +388,15 @@
       </div>
       <div id="viewer-edit-bar" class="history-bar hidden">
         <span id="edit-status" class="live-badge live-connecting">editing</span>
-        <input id="comment-text" class="note-input" type="text" placeholder="Select text in the doc, then type an inline comment…" />
+        <span class="head-btns" role="group" aria-label="Heading level">
+          <button id="head-pocket" class="btn ghost small" type="button" title="Pocket / H1 (F4)">Pocket</button>
+          <button id="head-hat" class="btn ghost small" type="button" title="Hat / H2 (F5)">Hat</button>
+          <button id="head-block" class="btn ghost small" type="button" title="Block / H3 (F6)">Block</button>
+        </span>
+        <input id="comment-text" class="note-input" type="text" placeholder="Select text, then type an inline comment…" />
         <button id="comment-add" class="btn small" type="button">Comment</button>
-        <span class="muted small" title="F4 Pocket · F5 Hat · F6 Block · Ctrl+Z undo · Ctrl+Y redo">F4–F6 headings · ⌃Z/⌃Y</span>
         <span style="flex:1"></span>
+        <span class="muted small" title="Ctrl+Z undo · Ctrl+Y redo">⌃Z/⌃Y</span>
         <button id="edit-close" class="btn ghost small" type="button">Stop editing</button>
       </div>
       <div id="viewer-history-bar" class="history-bar hidden">

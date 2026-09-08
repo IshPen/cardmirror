@@ -920,6 +920,13 @@ function addCommentFlow() {
   if (!text) { input.focus(); return; }
   if (_editHandle.addComment(text)) { input.value = ''; setEditStatus('live', 'Comment added — synced to the session.'); }
 }
+function applyHeading(type) {
+  if (!_editHandle) return;
+  const ok = _editHandle.setHeading(type);
+  setEditStatus('live', ok
+    ? type[0].toUpperCase() + type.slice(1) + ' applied.'
+    : 'Put the cursor in a document-level line (a heading/paragraph outside a card). In-card headings come with the card batch.');
+}
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
 // The relay only knows names (v2 labels / registry owner), never emails.
@@ -1430,6 +1437,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('viewer-edit-btn').onclick = startEdit;
   $('edit-close').onclick = exitEdit;
   $('comment-add').onclick = addCommentFlow;
+  $('head-pocket').onclick = () => applyHeading('pocket');
+  $('head-hat').onclick = () => applyHeading('hat');
+  $('head-block').onclick = () => applyHeading('block');
   $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;

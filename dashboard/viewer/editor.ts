@@ -13,7 +13,7 @@
  * Reuses CardMirror's audited modules verbatim (CollabSession, LoroSyncPlugin,
  * comments plugin + collab-comments sync) to keep correctness risk minimal.
  */
-import { EditorState, type Command } from 'prosemirror-state';
+import { EditorState, type Command, type Transaction } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap } from 'prosemirror-commands';
@@ -48,27 +48,33 @@ const EDITOR_PAGE =
   '.pmd-comment-range{background:color-mix(in srgb,#f59e0b 20%,transparent);border-bottom:2px solid #f59e0b}' +
   '</style></head><body><div id="editor" class="pmd-viewer-doc"></div></body></html>';
 
-// Convert the cursor's DOC-LEVEL block to a heading (F4=pocket, F5=hat,
-// F6=block) — the common case of CardMirror's setHeading, replicated so we
-// don't bundle the app-coupled ribbon-commands module. Only doc-level blocks
-// convert (a no-op inside cards); tag/card structural edits are a later batch.
-// Always claims the key while editing so F5 doesn't reload the page.
+// Convert the cursor's DOC-LEVEL block to a heading (Pocket/Hat/Block) — the
+// common outline case of CardMirror's setHeading, replicated so we don't bundle
+// the app-coupled ribbon-commands (it pulls the whole editor + card cutter).
+// Only doc-level blocks convert (a no-op INSIDE a card — tag/card-body
+// conversion is card structural surgery, a later batch).
 const DOC_LEVEL_CONVERTIBLE = ['paragraph', 'cite_paragraph', 'undertag', 'card_body', 'pocket', 'hat', 'block'];
 const DOC_HEADINGS = ['pocket', 'hat', 'block'];
+/** Returns a conversion transaction, or null when the cursor's doc-level block
+ *  can't become `typeName` (already is, or is inside a card). */
+function headingTr(state: EditorState, typeName: string): Transaction | null {
+  const { $from } = state.selection;
+  const node = $from.depth >= 1 ? $from.node(1) : null; // direct child of doc
+  if (!node || !DOC_LEVEL_CONVERTIBLE.includes(node.type.name) || node.type.name === typeName) return null;
+  const target = schema.nodes[typeName];
+  if (!target) return null;
+  const id = DOC_HEADINGS.includes(node.type.name)
+    ? ((node.attrs['id'] as string | null) ?? newHeadingId())
+    : newHeadingId();
+  return state.tr.setNodeMarkup($from.before(1), target, { id }).scrollIntoView();
+}
+/** Keymap form: converts when possible, ALWAYS claims the key so the browser
+ *  doesn't act on F4–F6 (e.g. F5 reload) while the editor is focused. */
 function setDocHeading(typeName: string): Command {
   return (state, dispatch) => {
-    const { $from } = state.selection;
-    const node = $from.depth >= 1 ? $from.node(1) : null; // direct child of doc
-    if (node && DOC_LEVEL_CONVERTIBLE.includes(node.type.name) && node.type.name !== typeName) {
-      const target = schema.nodes[typeName];
-      if (target && dispatch) {
-        const id = DOC_HEADINGS.includes(node.type.name)
-          ? ((node.attrs['id'] as string | null) ?? newHeadingId())
-          : newHeadingId();
-        dispatch(state.tr.setNodeMarkup($from.before(1), target, { id }).scrollIntoView());
-      }
-    }
-    return true; // claim F4–F6 while the editor is focused (prevents F5 reload)
+    const tr = headingTr(state, typeName);
+    if (tr && dispatch) dispatch(tr);
+    return true;
   };
 }
 
@@ -86,6 +92,9 @@ export interface EditHandle {
   /** Add an inline comment on the current selection. Returns false if nothing
    *  is selected. The comment syncs to peers through the shared doc. */
   addComment: (text: string) => boolean;
+  /** Convert the cursor's doc-level block to a heading (pocket/hat/block).
+   *  Returns false when it can't (already that type, or inside a card). */
+  setHeading: (typeName: string) => boolean;
   /** True while text is selected (for enabling the comment control). */
   hasSelection: () => boolean;
   stop: () => Promise<void>;
@@ -153,12 +162,29 @@ export async function mountEditor(
   });
   view = new EditorView(mount, { state });
 
+  // Some F-keys are browser-reserved (F5 reload, F7 caret) and would fire
+  // before ProseMirror's keymap. Claim F4–F7 at capture phase inside the
+  // iframe so the editor's bindings win; propagation still reaches PM.
+  try {
+    idoc.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (/^F[4-7]$/.test(e.key)) e.preventDefault();
+    }, true);
+  } catch { /* older browsers */ }
+
   session.start();       // begin streaming + outbound flushing
   commentSync.pull();    // load any existing comment threads from the shared map
   cbs.onStatus('live');
 
   return {
     hasSelection() { return !!(view && !view.state.selection.empty); },
+    setHeading(typeName) {
+      if (!view) return false;
+      const tr = headingTr(view.state, typeName);
+      if (!tr) return false;
+      view.dispatch(tr);
+      view.focus();
+      return true;
+    },
     addComment(text) {
       if (!view) return false;
       const sel = view.state.selection;
