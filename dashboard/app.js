@@ -922,10 +922,19 @@ function addCommentFlow() {
 }
 function applyHeading(type) {
   if (!_editHandle) return;
-  const ok = _editHandle.setHeading(type);
-  setEditStatus('live', ok
-    ? type[0].toUpperCase() + type.slice(1) + ' applied.'
-    : 'Put the cursor in a document-level line (a heading/paragraph outside a card). In-card headings come with the card batch.');
+  const cap = type[0].toUpperCase() + type.slice(1);
+  const r = _editHandle.setHeading(type);
+  const msg = {
+    converted: cap + ' applied.',
+    already: 'Already a ' + cap + '.',
+    'in-card': 'That line is inside a card — converting in-card headings (and Tag) is the next batch.',
+    none: 'Put the cursor in a document-level line (a heading/paragraph between cards).',
+  };
+  setEditStatus('live', msg[r] || '');
+}
+function clearFormattingFlow() {
+  if (!_editHandle) return;
+  setEditStatus('live', _editHandle.clearFormatting() ? 'Formatting cleared.' : 'Nothing to clear here.');
 }
 
 // ── Roster + "Ask for access" (mailto) ───────────────────────────────
@@ -1440,6 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('head-pocket').onclick = () => applyHeading('pocket');
   $('head-hat').onclick = () => applyHeading('hat');
   $('head-block').onclick = () => applyHeading('block');
+  $('head-clear').onclick = clearFormattingFlow;
   $('comment-text').onkeydown = (e) => { if (e.key === 'Enter') addCommentFlow(); };
   $('viewer-note-btn').onclick = toggleNoteBar;
   $('note-send').onclick = sendNoteNow;

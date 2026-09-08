@@ -78,6 +78,34 @@ function setDocHeading(typeName: string): Command {
   };
 }
 
+/** Clear formatting (F12): strip all inline marks across the selection (or the
+ *  cursor's block) AND convert a doc-level heading back to a plain paragraph —
+ *  CardMirror's "clear back to plain text". Marks are stripped even inside a
+ *  card; the heading→paragraph part is doc-level only. */
+function clearFormattingTr(state: EditorState): Transaction | null {
+  const sel = state.selection;
+  const $from = sel.$from;
+  let tr = state.tr;
+  let changed = false;
+  const mFrom = sel.empty ? $from.start($from.depth) : sel.from;
+  const mTo = sel.empty ? $from.end($from.depth) : sel.to;
+  if (mTo > mFrom) { tr = tr.removeMark(mFrom, mTo, null); changed = true; }
+  const node = $from.depth >= 1 ? $from.node(1) : null;
+  const para = schema.nodes['paragraph'];
+  if (node && DOC_HEADINGS.includes(node.type.name) && para) {
+    tr = tr.setNodeMarkup($from.before(1), para, {});
+    changed = true;
+  }
+  return changed ? tr.scrollIntoView() : null;
+}
+function clearFormattingCmd(): Command {
+  return (state, dispatch) => {
+    const tr = clearFormattingTr(state);
+    if (tr && dispatch) dispatch(tr);
+    return true; // claim F12
+  };
+}
+
 export interface EditOpts {
   relayUrl: string;
   token: string;
@@ -88,13 +116,16 @@ export type EditStatus = 'connecting' | 'live' | 'offline' | 'ended' | 'full' | 
 export interface EditCallbacks {
   onStatus: (status: EditStatus, detail?: string) => void;
 }
+export type HeadingResult = 'converted' | 'already' | 'in-card' | 'none';
 export interface EditHandle {
   /** Add an inline comment on the current selection. Returns false if nothing
    *  is selected. The comment syncs to peers through the shared doc. */
   addComment: (text: string) => boolean;
   /** Convert the cursor's doc-level block to a heading (pocket/hat/block).
-   *  Returns false when it can't (already that type, or inside a card). */
-  setHeading: (typeName: string) => boolean;
+   *  Reports what happened so the UI can explain (e.g. 'in-card'). */
+  setHeading: (typeName: string) => HeadingResult;
+  /** Clear formatting (F12): strip marks + heading→paragraph. */
+  clearFormatting: () => boolean;
   /** True while text is selected (for enabling the comment control). */
   hasSelection: () => boolean;
   stop: () => Promise<void>;
@@ -156,7 +187,10 @@ export async function mountEditor(
       commentSync.plugin,
       commentsPlugin,
       keymap({ 'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo }),
-      keymap({ F4: setDocHeading('pocket'), F5: setDocHeading('hat'), F6: setDocHeading('block') }),
+      keymap({
+        F4: setDocHeading('pocket'), F5: setDocHeading('hat'), F6: setDocHeading('block'),
+        F12: clearFormattingCmd(),
+      }),
       keymap(baseKeymap),
     ],
   });
@@ -167,7 +201,7 @@ export async function mountEditor(
   // iframe so the editor's bindings win; propagation still reaches PM.
   try {
     idoc.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (/^F[4-7]$/.test(e.key)) e.preventDefault();
+      if (/^F([4-7]|12)$/.test(e.key)) e.preventDefault();
     }, true);
   } catch { /* older browsers */ }
 
@@ -178,8 +212,21 @@ export async function mountEditor(
   return {
     hasSelection() { return !!(view && !view.state.selection.empty); },
     setHeading(typeName) {
-      if (!view) return false;
+      if (!view) return 'none';
+      const { $from } = view.state.selection;
+      const node = $from.depth >= 1 ? $from.node(1) : null;
+      if (!node) return 'none';
+      if (node.type.name === typeName) return 'already';
+      if (!DOC_LEVEL_CONVERTIBLE.includes(node.type.name)) return 'in-card';
       const tr = headingTr(view.state, typeName);
+      if (!tr) return 'none';
+      view.dispatch(tr);
+      view.focus();
+      return 'converted';
+    },
+    clearFormatting() {
+      if (!view) return false;
+      const tr = clearFormattingTr(view.state);
       if (!tr) return false;
       view.dispatch(tr);
       view.focus();
