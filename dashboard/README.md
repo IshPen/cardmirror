@@ -6,22 +6,28 @@ writing SQL.
 
 It is a static site: three files (`index.html`, `styles.css`, `app.js`)
 plus `schema.sql`. No backend, no build step. Open `index.html` locally,
-or host the folder on GitHub Pages / Netlify drop / any static host.
+or host the folder on GitHub Pages / Netlify drop / any static host. A
+sidebar switches between four **views** (Overview / Sessions / Activity /
+Team); a light/dark toggle sits in the header.
 
-## What it can and can't do (v1)
+## What it can and can't do
 
-| Panel | Shows |
+| View / feature | Shows |
 |---|---|
-| **Health** | Green/red from `GET /relay/health` (no auth) |
-| **Sessions** | Every registered room: label, owner, event, size, last activity, live/dead |
-| **Stale** | Rooms within ~2 days of the 7-day idle deletion |
-| **Storage** | Estimated DB usage vs. the 500 MB free tier, plus rooms-remaining |
-| **Add session** | Paste a share code, give it a label/owner/event |
-| **✉️ Ask for access** | On each live room, emails the people on it (via a `mailto:`) to ask for the share code |
-| **Member** (Path B) | Shows the dashboard's own member code; students *invite* it into a session and it learns the doc name |
-| **Request access** | In the Member panel, emails a student your dashboard code with add-and-invite steps ("Your coach is requesting access…") |
-| **Open** | On rooms the dashboard was invited to, renders the decrypted document with **native CardMirror styling** (in an isolated iframe), a **heading outline** rail to jump around, and a **Go live** toggle that streams edits in real time (read-only) |
-| **New-invite alerts** | When a doc is shared, a banner appears (and a desktop notification, if enabled). Server-side email is opt-in — see `relay/README.md` |
+| **Overview** | KPI tiles (live sessions, online now, total rooms, storage), relay **Health** (from `GET /relay/health`), **Storage** vs. the 500 MB free tier, and **who's online now** presence chips |
+| **Sessions** | Every registered room (label, owner, event, size, last activity, live/dead), **Add session** (paste a share code), **Backup all** (see below), and a **Stale** table with a per-room "Remind" mailto nudge |
+| **Activity** | An **activity feed** (room created / active / idle, newest first) and an 8-week **activity heatmap** |
+| **Team** | Per-member attribution (rooms created, in-sessions, storage, last active, online) from `created_by` + live participants, filterable by **group** |
+| **Ask for access** | On each live room, emails the people on it (`mailto:`) to ask for the share code |
+| **Member** (Path B) | Shows the dashboard's own member code; students *invite* it into a session and it learns the doc name. Also: **request access** email, desktop-alert toggle |
+| **Open** | Renders the decrypted document with **native CardMirror styling** (isolated iframe), a **heading outline** rail, a **Go live** read-only stream, **.docx** / **PDF** export, a **version-history** scrubber, and a **Note** bar that sends a plain-text note to the author (arrives in their CardMirror Receive pill) |
+| **Backup all** | Exports every openable doc to `.docx` and downloads one `.zip` (skips rooms without a key) |
+| **New-invite alerts** | A banner (and desktop notification, if enabled). Server-side email is opt-in — see `relay/README.md` |
+| **Tokens** | Per-person relay tokens with name / email / **group** / role; Sync-to-relay or Copy RELAY_TOKENS |
+
+Content features (Open, export, history, backup, notes) work only on rooms
+the dashboard **holds a key for** — i.e. ones a student invited it into.
+Everything else is metadata and works for every room.
 
 ### Core vs. served-only features
 

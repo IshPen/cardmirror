@@ -391,7 +391,7 @@ function showInviteNotice(roomId, title) {
   bar.className = 'notice';
   const msg = document.createElement('span');
   msg.className = 'notice-msg';
-  msg.textContent = '🔔 New document shared: ' + title;
+  msg.textContent = 'New document shared: ' + title;
   const open = document.createElement('button');
   open.className = 'btn small';
   open.textContent = 'Open';
