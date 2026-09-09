@@ -101,7 +101,7 @@ RELAY_NOTIFY_FROM=...                   # optional. Defaults to Resend's shared
                                         # which delivers to your own account
                                         # address with NO domain setup. Set a
                                         # verified-domain sender like
-                                        # "Debate Relay <no-reply@yourteam.org>"
+                                        # "CardBridge <no-reply@yourteam.org>"
                                         # for production / arbitrary recipients.
 RELAY_NOTIFY_ROUTES=<dashboard routing id>  # optional: only notify for this
                                         # mailbox (shown in the dashboard's

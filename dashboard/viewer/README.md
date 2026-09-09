@@ -38,7 +38,7 @@ invite or a pasted share code).
   same rooms you could register in the main dashboard. It is *not*
   automatic naming of every live room (students create rooms and hold the
   keys; the relay never sees them). See the roadmap in the top-level
-  `README.debate-relay.md`.
+  `README.cardbridge.md`.
 
 ## How the pipeline works
 

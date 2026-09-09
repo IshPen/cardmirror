@@ -1,6 +1,6 @@
 # Findings
 
-These came from testing Debate Relay on live hardware, and are not
+These came from testing CardBridge on live hardware, and are not
 documented anywhere else. They are the reason this repo is worth reading —
 the setup steps you can reconstruct; these you can't.
 

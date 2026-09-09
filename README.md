@@ -4,6 +4,12 @@
 
 # CardMirror
 
+> **Running a team?** This fork adds **[CardBridge](./README.cardbridge.md)** —
+> a free, self-hosted collaboration relay for debate teams (a coach dashboard,
+> one-click deploy, cross-device sync, and a document viewer) built on top of
+> the CardMirror editor below. Start with the
+> [guided setup](./dashboard/guide.html) or [`SETUP.md`](./SETUP.md).
+
 CardMirror is a debate text editor focused on high school and college
 policy debate. It's a standalone
 replacement for the editor side of
