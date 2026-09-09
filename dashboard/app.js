@@ -515,6 +515,13 @@ async function showMember() {
   $('member-routing').textContent = '…';
   if ($('member-share-status')) $('member-share-status').textContent = '';
   reflectPortableIdentity();
+  if (!(await x25519Supported())) {
+    $('member-code').textContent = '(unavailable)';
+    $('member-note').textContent =
+      'This browser lacks WebCrypto X25519, which the member code needs. Use a recent Chrome or Edge.';
+    $('member-note').classList.remove('hidden');
+    return;
+  }
   try {
     const m = await loadMember();
     $('member-code').textContent = await m.getMemberCode();
@@ -1425,8 +1432,15 @@ function setSyncStatus(msg) {
 
 async function syncPush() {
   if (!DRSync.ready()) return;
-  try { await DRSync.push(syncSnapshot()); _lastSyncSig = syncSig(); setSyncStatus(); }
-  catch (e) { setSyncStatus(String(e.message || e)); }
+  try {
+    // Guard against clobbering a shared portable identity: if this device
+    // doesn't currently hold one, adopt whatever the cloud has BEFORE pushing,
+    // so a stale device can never wipe a code another device just enabled.
+    if (!_vaultIdentity) {
+      try { const row = await DRSync.pull(); if (row && row.vault && row.vault.identity) _vaultIdentity = row.vault.identity; } catch {}
+    }
+    await DRSync.push(syncSnapshot()); _lastSyncSig = syncSig(); setSyncStatus();
+  } catch (e) { setSyncStatus(String(e.message || e)); }
 }
 
 // Called right after a successful coach sign-in (password still in hand).
@@ -1533,6 +1547,38 @@ async function doCoachSignIn(email, password, setStatus) {
 
 // Is cross-device sync unlocked this session? (password held + configured)
 function syncUnlocked() { return !!(window.DRSync && DRSync.ready()); }
+
+// ── Browser capability guard ─────────────────────────────────────────
+// Member codes, cross-device sync, and Open all rely on WebCrypto X25519,
+// which is new and NOT in every browser (fine in Chrome/Edge/Electron; missing
+// in older Chrome and some Safari/Firefox). Detect once so we can warn clearly
+// instead of throwing deep in the crypto. Metadata monitoring needs none of it.
+let _x25519 = null;
+async function x25519Supported() {
+  if (_x25519 !== null) return _x25519;
+  try {
+    await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+    _x25519 = true;
+  } catch { _x25519 = false; }
+  return _x25519;
+}
+async function checkCryptoSupport() {
+  if (await x25519Supported()) return;
+  const stack = $('notice-stack');
+  if (!stack || document.getElementById('crypto-warn')) return;
+  const el = document.createElement('div');
+  el.id = 'crypto-warn';
+  el.className = 'notice';
+  el.style.borderColor = 'var(--red)';
+  el.innerHTML = '<span class="notice-msg"><strong>Limited browser support.</strong> ' +
+    'This browser lacks the encryption (WebCrypto X25519) that member codes, ' +
+    'cross-device sync, and opening documents need — those are disabled here. ' +
+    'Monitoring still works. Use a recent <strong>Chrome or Edge</strong> for the full dashboard.</span>' +
+    '<button class="btn ghost small" id="crypto-warn-x" type="button">Dismiss</button>';
+  stack.appendChild(el);
+  const x = document.getElementById('crypto-warn-x');
+  if (x) x.onclick = () => el.remove();
+}
 
 // A dismissible prompt shown when Supabase is configured but the vault isn't
 // unlocked this session (fresh load / new browser / expired token) — so the
@@ -1967,7 +2013,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else updateSigninBanner();
   };
 
-  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); ensureCoachId().then(() => trackEvent('app_open', { signedIn: syncUnlocked() })); }
+  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); checkCryptoSupport(); ensureCoachId().then(() => trackEvent('app_open', { signedIn: syncUnlocked() })); }
   else { showConfig(); }
 
   // Auto-refresh every 60s while the tab is open.
