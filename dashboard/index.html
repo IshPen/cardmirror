@@ -123,6 +123,11 @@
         </div>
       </div>
 
+      <label class="cfg-optout"><input id="cfg-telemetry" type="checkbox" checked />
+        <span>Share <strong>anonymous</strong> usage stats to help improve CardBridge
+        — random install id + counts only. <em>No emails, URLs, keys, room ids, names, or
+        document content ever leave your browser.</em></span></label>
+
       <div class="config-actions">
         <button id="cfg-save" class="btn primary" type="button">Save &amp; open dashboard</button>
         <button id="cfg-cancel" class="btn ghost" type="button">Cancel</button>
@@ -189,6 +194,7 @@
         </div>
         <div class="ribbon">
           <span class="rb-pill"><span class="dot" id="ribbon-dot"></span><span id="ribbon-health">Relay</span></span>
+          <span class="rb-pill rb-sync" id="ribbon-sync" role="button" tabindex="0" title="Cross-device sync status"><span class="dot" id="ribbon-sync-dot"></span><span id="ribbon-sync-label">Sign in</span></span>
           <span class="rb-hide">Storage&nbsp;<b id="ribbon-storage">—</b></span>
           <span class="rb-hide">Online&nbsp;<b id="ribbon-online">—</b></span>
         </div>
@@ -616,6 +622,7 @@
   </footer>
 
   <script src="sync.js"></script>
+  <script src="telemetry.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

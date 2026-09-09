@@ -154,6 +154,7 @@ async function refreshData() {
   renderActivityFeed(rooms, registry, partsByRoom);
   renderHeatmap(rooms);
   renderTeamView(rooms, registry, partsByRoom);
+  sendHeartbeat(); // anonymous, throttled
 }
 let _lastData = null;
 
@@ -678,6 +679,8 @@ async function openDoc(roomId) {
   closeHistory();
   teardownEdit();
   editRestoreChrome();
+  _viewerUsedThisSession = true;
+  trackEvent('doc_opened');
   _viewerRoomId = roomId;
   const kr = knownRoom(roomId);
   $('viewer-title').textContent = (kr && kr.title) || 'Document';
@@ -1266,6 +1269,7 @@ async function submitAdd() {
       event: $('add-event').value.trim() || null,
     });
     closeAdd();
+    trackEvent('session_added');
     await refreshData();
   } catch (e) {
     // Duplicate primary key → already registered.
@@ -1406,6 +1410,7 @@ let _lastSyncSig = '';
 function syncSig() { return JSON.stringify(syncSnapshot()); }
 
 function setSyncStatus(msg) {
+  updateSyncChip();
   const el = $('sync-status'); if (!el) return;
   if (msg) { el.textContent = msg; return; }
   const s = DRSync.state;
@@ -1482,6 +1487,7 @@ async function enableSharedIdentity() {
     await syncPush();
     $('member-code').textContent = code;
     reflectPortableIdentity();
+    trackEvent('shared_identity', { sharedIdentity: true });
     if (status) status.textContent =
       'Shared code on. Re-share this code to students once — it now works on all your devices.';
   } catch (e) {
@@ -1516,6 +1522,7 @@ async function doCoachSignIn(email, password, setStatus) {
     setStatus('Signed in — tokens, documents & shared code synced.');
     if ($('tk-auth-status')) $('tk-auth-status').textContent = authStatusText();
     updateSigninBanner();
+    trackEvent('signin', { signedIn: true });
     return true;
   } catch (e) { setStatus(String(e.message || e)); return false; }
 }
@@ -1527,7 +1534,19 @@ function syncUnlocked() { return !!(window.DRSync && DRSync.ready()); }
 // unlocked this session (fresh load / new browser / expired token) — so the
 // coach is nudged to sign in instead of silently getting no sync.
 let _signinBannerDismissed = false;
+// The header ribbon's at-a-glance sync chip: green "Synced" vs amber "Sign in".
+function updateSyncChip() {
+  const chip = $('ribbon-sync');
+  if (!chip) return;
+  const label = $('ribbon-sync-label');
+  if (!config || !config.supabase) { chip.style.display = 'none'; return; }
+  chip.style.display = '';
+  if (syncUnlocked()) { chip.dataset.state = 'in'; if (label) label.textContent = 'Synced'; chip.title = 'Cross-device sync is on'; }
+  else { chip.dataset.state = 'out'; if (label) label.textContent = 'Sign in'; chip.title = 'Sign in to sync across devices'; }
+}
+
 function updateSigninBanner() {
+  updateSyncChip();
   const stack = $('notice-stack');
   if (!stack) return;
   const existing = document.getElementById('signin-banner');
@@ -1554,6 +1573,38 @@ function openSignin() {
   setTimeout(() => { const p = $('si-password'); if (p) p.focus(); }, 0);
 }
 function closeSignin() { $('signin-modal').classList.add('hidden'); }
+
+// ── Usage metrics hooks (anonymous; strict allowlist in telemetry.js) ─
+let _viewerUsedThisSession = false;
+let _lastHeartbeat = 0;
+function metricsProps() {
+  const d = _lastData || { rooms: [], partsByRoom: new Map() };
+  const rooms = d.rooms || [];
+  const live = liveRooms(rooms);
+  const store = knownRoomsStore();
+  return {
+    rooms: rooms.length,
+    sessions: live.length,
+    liveSessions: live.filter(isLive).length,
+    online: onlineNames(d.partsByRoom || new Map()).length,
+    team: team().length,
+    knownDocs: Object.keys(store).filter((k) => store[k] && store[k].keyB64).length,
+    signedIn: syncUnlocked(),
+    syncEnabled: !!(config && config.authEmail),
+    sharedIdentity: !!(config && config.portableIdentity),
+    viewerUsed: _viewerUsedThisSession,
+  };
+}
+function trackEvent(event, extra) {
+  if (window.DRTelemetry) DRTelemetry.track(event, extra || metricsProps());
+}
+function sendHeartbeat(force) {
+  if (!window.DRTelemetry) return;
+  const now = Date.now();
+  if (!force && now - _lastHeartbeat < 5 * 60 * 1000) return; // at most once / 5 min
+  _lastHeartbeat = now;
+  DRTelemetry.track('heartbeat', metricsProps());
+}
 
 function renderTeam() {
   const body = $('team-body');
@@ -1675,6 +1726,7 @@ function showConfig() {
     $('cfg-roster').value = config.roster || '';
     if ($('cfg-auth-email')) $('cfg-auth-email').value = config.authEmail || '';
   }
+  if (window.DRTelemetry && $('cfg-telemetry')) $('cfg-telemetry').checked = !DRTelemetry.isOptedOut();
   $('app-shell').classList.add('hidden');
   $('config-panel').classList.remove('hidden');
 }
@@ -1764,6 +1816,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ok) { $('si-password').value = ''; closeSignin(); }
   };
   if ($('si-cancel')) $('si-cancel').onclick = closeSignin;
+  if ($('ribbon-sync')) {
+    const openIfOut = () => { if (!syncUnlocked()) openSignin(); };
+    $('ribbon-sync').onclick = openIfOut;
+    $('ribbon-sync').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openIfOut(); } };
+  }
   $('sync-now').onclick = async () => {
     if (!DRSync.ready()) { setSyncStatus('Sign in above first.'); return; }
     setSyncStatus('Syncing…'); await syncPush();
@@ -1859,6 +1916,7 @@ document.addEventListener('DOMContentLoaded', () => {
       relaytoken: $('cfg-relaytoken').value.trim() || (config && config.relaytoken) || '',
     };
     if (!cfg.relay || !cfg.supabase || !cfg.anon) { alert('Relay URL, Supabase URL and anon key are required.'); return; }
+    if (window.DRTelemetry && $('cfg-telemetry')) { $('cfg-telemetry').checked ? DRTelemetry.optIn() : DRTelemetry.optOut(); }
     config = cfg;
     saveConfig(cfg);
     showDashboard();
@@ -1871,7 +1929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else updateSigninBanner();
   };
 
-  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); }
+  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); trackEvent('app_open', { signedIn: syncUnlocked() }); }
   else { showConfig(); }
 
   // Auto-refresh every 60s while the tab is open.

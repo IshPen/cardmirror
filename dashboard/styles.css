@@ -494,6 +494,13 @@ tbody tr:hover td { background: color-mix(in srgb, var(--primary) 6%, transparen
 .ribbon .rb-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2);
   border: 1px solid var(--border); padding: 6px 11px; border-radius: 999px; font-weight: 600; color: var(--text); }
 @media (max-width: 980px) { .ribbon .rb-hide { display: none; } }
+/* Sync chip: green when unlocked, tappable amber "Sign in" when not. */
+.rb-sync { transition: border-color var(--ease), color var(--ease); }
+.rb-sync[data-state="out"] { cursor: pointer; color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
+.rb-sync[data-state="out"]:hover { border-color: var(--amber); }
+.rb-sync[data-state="in"] { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, var(--border)); }
+.rb-sync[data-state="in"] .dot { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+.rb-sync[data-state="out"] .dot { background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 22%, transparent); }
 
 /* Kicker used inside views/sections */
 .kicker { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--primary);
@@ -556,3 +563,9 @@ tbody tr:hover td { background: color-mix(in srgb, var(--primary) 6%, transparen
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent); animation: pulse-live 2s infinite; }
 @keyframes pulse-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
   70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* Wizard telemetry opt-out row */
+.cfg-optout { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 4px !important;
+  font-size: 13px; font-weight: 400 !important; color: var(--muted); }
+.cfg-optout input { width: 16px; height: 16px; margin-top: 2px; flex: none; accent-color: var(--primary); }
+.cfg-optout strong { color: var(--text); }
