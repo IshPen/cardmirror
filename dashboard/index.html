@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Debate Relay — Coach Dashboard</title>
+  <title>CardBridge — Coach Command Center</title>
   <meta name="color-scheme" content="light dark" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -15,7 +18,7 @@
     <div class="card config-card wizard">
       <div class="wiz-head">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.2L4 17.2V4z"/><path d="M8 9h8M8 12h5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 7-7"/><path d="M5 12a7 7 0 0 0 7 7"/><path d="M2 12a10 10 0 0 1 10-10"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/></svg>
         </span>
         <div>
           <h2>Set up your dashboard</h2>
@@ -105,14 +108,15 @@
     <aside class="sidebar">
       <div class="side-brand">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.2L4 17.2V4z"/><path d="M8 9h8M8 12h5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 7-7"/><path d="M5 12a7 7 0 0 0 7 7"/><path d="M2 12a10 10 0 0 1 10-10"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/></svg>
         </span>
         <div>
-          <div class="brand-name">Debate Relay</div>
+          <div class="brand-name">CardBridge</div>
           <div class="brand-sub"><span class="dot" id="health-dot" title="Relay health"></span> <span id="health-mini">checking…</span></div>
         </div>
       </div>
 
+      <div class="nav-label">Workspace</div>
       <nav class="side-nav" aria-label="Views">
         <a class="nav-item active" data-view="overview" role="button" tabindex="0">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
@@ -132,7 +136,9 @@
         </a>
       </nav>
 
+      <div class="nav-label">Manage</div>
       <div class="side-foot">
+        <div class="side-status"><span class="dot" id="health-dot-side"></span><span id="health-side">Relay</span><span class="side-status-sub" id="health-side-sub"></span></div>
         <button id="member-btn" class="btn ghost side-btn" type="button">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
           <span>Member</span>
@@ -150,7 +156,15 @@
 
     <main class="content">
       <header class="content-head">
-        <h1 id="view-title">Overview</h1>
+        <div class="head-titles">
+          <span class="page-kicker" id="view-kicker">Team Overview</span>
+          <h1 id="view-title">Overview</h1>
+        </div>
+        <div class="ribbon">
+          <span class="rb-pill"><span class="dot" id="ribbon-dot"></span><span id="ribbon-health">Relay</span></span>
+          <span class="rb-hide">Storage&nbsp;<b id="ribbon-storage">—</b></span>
+          <span class="rb-hide">Online&nbsp;<b id="ribbon-online">—</b></span>
+        </div>
         <div class="head-actions">
           <button id="theme-btn" class="btn ghost icon-btn" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme">
             <svg class="ico ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -167,33 +181,47 @@
 
       <!-- OVERVIEW -->
       <section class="view active" data-view="overview">
-        <div class="stat-row">
-          <div class="stat"><div class="stat-label">Live sessions</div><div class="stat-num num" id="stat-live">—</div></div>
-          <div class="stat"><div class="stat-label">Online now</div><div class="stat-num num" id="stat-online">—</div></div>
-          <div class="stat"><div class="stat-label">Total rooms</div><div class="stat-num num" id="stat-rooms">—</div></div>
-          <div class="stat"><div class="stat-label">Storage used</div><div class="stat-num num" id="stat-storage">—</div></div>
-        </div>
-        <div class="grid2">
-          <section class="card" id="panel-health">
-            <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Relay health</h2></div>
-            <div class="health-line">
-              <span class="dot" id="health-dot-lg"></span>
-              <span id="health-text">Checking…</span>
-            </div>
-            <p class="muted small" id="health-detail"></p>
+        <div class="bento">
+          <!-- Hero: live sessions -->
+          <section class="tile hero" id="panel-live">
+            <span class="corner" aria-hidden="true"></span>
+            <span class="badge-live"><span class="dot ok"></span>RELAY LIVE</span>
+            <div class="hero-title">Active sessions</div>
+            <div class="hero-big num" id="stat-live">—</div>
+            <div class="ov-live-list" id="ov-live-list"><span class="ov-empty">Loading…</span></div>
           </section>
 
-          <section class="card" id="panel-storage">
-            <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg> Storage</h2></div>
+          <!-- KPI tiles -->
+          <section class="tile">
+            <div class="tile-lab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14 0M8.5 16.11a6 6 0 0 1 7 0M12 20h.01"/></svg> Online now</div>
+            <div class="metric num" id="stat-online">—</div>
+          </section>
+          <section class="tile">
+            <div class="tile-lab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 20V9"/></svg> Total rooms</div>
+            <div class="metric num" id="stat-rooms">—</div>
+          </section>
+
+          <!-- Storage -->
+          <section class="tile span2" id="panel-storage">
+            <div class="tile-lab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg> Storage <span id="stat-storage" class="num" style="margin-left:auto;color:var(--muted)"></span></div>
             <div class="meter"><div class="meter-fill" id="storage-fill"></div></div>
-            <p id="storage-text" class="muted">Loading…</p>
-            <p id="storage-estimate" class="muted small"></p>
+            <p id="storage-text" class="muted small" style="margin:8px 0 0">Loading…</p>
+            <p id="storage-estimate" class="muted small" style="margin:2px 0 0"></p>
+          </section>
+
+          <!-- Health -->
+          <section class="tile span2" id="panel-health">
+            <div class="tile-lab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Relay health</div>
+            <div class="health-line" style="margin-top:12px"><span class="dot" id="health-dot-lg"></span><span id="health-text">Checking…</span></div>
+            <p class="muted small" id="health-detail" style="margin:8px 0 0"></p>
+          </section>
+
+          <!-- Presence -->
+          <section class="tile span2" id="panel-presence">
+            <div class="tile-lab"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/></svg> Who's online now</div>
+            <div id="presence-list" class="presence-list" style="margin-top:12px"><span class="muted small">Loading…</span></div>
           </section>
         </div>
-        <section class="card wide" id="panel-presence">
-          <div class="card-head"><h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14 0M8.5 16.11a6 6 0 0 1 7 0M12 20h.01"/></svg> Who's online now</h2></div>
-          <div id="presence-list" class="presence-list"><span class="muted small">Loading…</span></div>
-        </section>
       </section>
 
       <!-- SESSIONS -->

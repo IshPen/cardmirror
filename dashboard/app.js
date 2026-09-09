@@ -1,4 +1,4 @@
-/* Debate Relay — coach dashboard.
+/* CardBridge — coach command center.
  *
  * A static page. Talks to two things:
  *   1. The relay's public GET /relay/health  (no auth).
@@ -84,11 +84,12 @@ async function sbInsert(table, row) {
 
 // ── Health ───────────────────────────────────────────────────────────
 async function refreshHealth() {
-  const setDot = (cls) => { for (const el of [$('health-dot'), $('health-dot-lg')]) { if (el) el.className = 'dot ' + cls; } };
-  const setMini = (t) => { const m = $('health-mini'); if (m) m.textContent = t; };
+  const setDot = (cls) => { for (const el of [$('health-dot'), $('health-dot-lg'), $('health-dot-side'), $('ribbon-dot')]) { if (el) el.className = 'dot ' + cls; } };
+  const setMini = (t) => { for (const id of ['health-mini', 'health-side-sub']) { const m = $(id); if (m) m.textContent = t; } };
+  const setLabel = (t) => { for (const id of ['ribbon-health', 'health-side']) { const m = $(id); if (m) m.textContent = t; } };
   $('health-text').textContent = 'Checking…';
   $('health-detail').textContent = '';
-  setMini('checking…');
+  setMini('checking…'); setLabel('Relay');
   try {
     const base = config.relay.replace(/\/$/, '');
     const t0 = performance.now();
@@ -96,18 +97,18 @@ async function refreshHealth() {
     const ms = Math.round(performance.now() - t0);
     const body = await res.json().catch(() => ({}));
     if (res.ok && body.ok) {
-      setDot('ok');
+      setDot('ok'); setLabel('Live');
       $('health-text').textContent = 'Relay is up';
       $('health-detail').textContent = `${base}/health · responded in ${ms} ms`;
       setMini(`up · ${ms} ms`);
     } else {
-      setDot('bad');
+      setDot('bad'); setLabel('Degraded');
       $('health-text').textContent = 'Relay responded, but not healthy';
       $('health-detail').textContent = `HTTP ${res.status}`;
       setMini(`HTTP ${res.status}`);
     }
   } catch (e) {
-    setDot('bad');
+    setDot('bad'); setLabel('Down');
     $('health-text').textContent = 'Relay is unreachable';
     $('health-detail').textContent = String(e.message || e) +
       ' — if it was idle, Render may be waking it (~60s). Try Refresh.';
@@ -148,6 +149,7 @@ async function refreshData() {
   renderStale(rooms, registry);
   renderStorage(rooms);
   renderStats(rooms, partsByRoom);
+  renderOverviewLive(rooms, registry, partsByRoom);
   renderPresence(rooms, registry, partsByRoom);
   renderActivityFeed(rooms, registry, partsByRoom);
   renderHeatmap(rooms);
@@ -181,6 +183,29 @@ function renderStats(rooms, partsByRoom) {
   set('stat-online', onlineNames(partsByRoom).length);
   set('stat-rooms', liveRooms(rooms).length);
   set('stat-storage', fmtBytes(bytes * DB_MULTIPLIER));
+  set('ribbon-online', onlineNames(partsByRoom).length);
+}
+
+// Overview hero: the most-recently-active live sessions, with owner initials.
+function renderOverviewLive(rooms, registry, partsByRoom) {
+  const el = $('ov-live-list');
+  if (!el) return;
+  const labelOf = new Map(registry.map((r) => [r.room_id, { label: r.label, owner: r.owner }]));
+  const live = liveRooms(rooms).filter(isLive)
+    .sort((a, b) => parseUtc(b.last_activity) - parseUtc(a.last_activity));
+  if (!live.length) {
+    el.innerHTML = '<span class="ov-empty">No sessions are live right now.</span>';
+    return;
+  }
+  const initial = (s) => (s || '·').trim().charAt(0).toUpperCase() || '·';
+  el.innerHTML = live.slice(0, 4).map((r) => {
+    const meta = labelOf.get(r.id) || {};
+    const name = meta.label || (r.id.slice(0, 8) + '…');
+    const who = meta.owner || r.created_by || '';
+    return `<div class="ov-live-row"><span class="pav">${esc(initial(who || name))}</span>` +
+      `<span class="nm">${esc(name)}</span>` +
+      `<span class="rt">${esc(fmtAgo(parseUtc(r.last_activity)))}</span></div>`;
+  }).join('');
 }
 
 // Who's online now — chips grouped by person, showing which rooms they're in.
@@ -407,7 +432,7 @@ function showInviteNotice(roomId, title) {
 function desktopNotify(title) {
   try {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Debate Relay — new document shared', { body: title });
+      new Notification('CardBridge — new document shared', { body: title });
     }
   } catch { /* notifications unsupported / blocked */ }
 }
@@ -1192,6 +1217,7 @@ function renderStorage(rooms) {
   $('storage-text').innerHTML =
     `Est. <strong>${fmtBytes(estDb)}</strong> of ${fmtBytes(FREE_TIER_BYTES)} used ` +
     `(${pct.toFixed(1)}%) across ${roomCount} live room${roomCount === 1 ? '' : 's'}.`;
+  const rbStore = $('ribbon-storage'); if (rbStore) rbStore.textContent = fmtBytes(estDb);
 
   const avg = roomCount ? contentBytes / roomCount : NOMINAL_ROOM;
   const remainingContent = FREE_TIER_BYTES / DB_MULTIPLIER - contentBytes;
@@ -1455,11 +1481,14 @@ function showDashboard() {
 // Sidebar view switching. Each .nav-item[data-view] reveals the matching
 // .view[data-view]; content is always in the DOM (rendering is unaffected).
 const VIEW_TITLES = { overview: 'Overview', sessions: 'Sessions', activity: 'Activity', team: 'Team' };
+const VIEW_KICKERS = { overview: 'Team Overview', sessions: 'Live & stored rooms', activity: 'What changed', team: 'People & attribution' };
 function switchView(view) {
   for (const el of document.querySelectorAll('.nav-item')) el.classList.toggle('active', el.dataset.view === view);
   for (const el of document.querySelectorAll('.view')) el.classList.toggle('active', el.dataset.view === view);
   const title = $('view-title');
   if (title) title.textContent = VIEW_TITLES[view] || 'Dashboard';
+  const kicker = $('view-kicker');
+  if (kicker) kicker.textContent = VIEW_KICKERS[view] || 'CardBridge';
 }
 function wireNav() {
   for (const el of document.querySelectorAll('.nav-item')) {

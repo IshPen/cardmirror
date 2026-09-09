@@ -1,58 +1,71 @@
-/* Debate Relay dashboard — no framework, no build step.
- * Design system: dark-first data-dashboard. Tokens drive everything; the
- * [data-theme] attribute on <html> overrides the palette (persisted by app.js),
- * falling back to the OS preference when unset. */
+/* CardBridge — coach command center. No framework, no build step.
+ * Design system: "mission-control console". Dark-first, teal signature with an
+ * electric-blue secondary; Space Grotesk for display/metrics, Inter for UI.
+ * Tokens drive everything; [data-theme] on <html> overrides the palette
+ * (persisted by app.js), falling back to the OS preference when unset. */
 :root {
-  /* Dark palette (default) */
-  --bg:        #0b0e14;
-  --bg-2:      #0f131c;
-  --panel:     #151a24;
-  --panel-2:   #1c2230;
-  --panel-3:   #232b3b;
-  --border:    #29303f;
-  --border-2:  #354054;
-  --text:      #e8ebf2;
-  --muted:     #9aa3b8;
-  --faint:     #6b7488;
-  --primary:   #3b82f6;
-  --primary-2: #1e40af;
-  --primary-fg:#ffffff;
-  --accent:    #f59e0b;   /* amber — CTAs / live */
-  --green:     #34d399;
-  --red:       #f87171;
-  --amber:     #fbbf24;
-  --accent-soft: color-mix(in srgb, var(--primary) 16%, transparent);
+  /* Dark palette (default) — deep slate canvas, layered surfaces */
+  --bg:        #080b10;
+  --bg-2:      #0b1017;
+  --panel:     #111823;
+  --panel-2:   #0e141d;
+  --panel-3:   #16202d;
+  --border:    #1e2a38;
+  --border-2:  #2a3a4d;
+  --text:      #eaf1f8;
+  --muted:     #9fb0c3;
+  --faint:     #62748a;
+  --primary:   #15c9b8;   /* teal — the signature */
+  --primary-2: #0f766e;   /* deep teal */
+  --primary-fg:#04121a;   /* ink on teal */
+  --accent:    #3b82f6;   /* electric blue — live/active + gradients */
+  --green:     #2fd07f;
+  --red:       #f2555a;
+  --amber:     #f5a524;
+  --accent-soft: color-mix(in srgb, var(--primary) 15%, transparent);
+  --glow:      color-mix(in srgb, var(--primary) 34%, transparent);
   /* Scale */
-  --radius:    12px;
-  --radius-sm: 8px;
-  --radius-lg: 16px;
-  --shadow:    0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.45);
-  --shadow-lg: 0 24px 60px -20px rgba(0,0,0,.6);
+  --radius:    14px;
+  --radius-sm: 10px;
+  --radius-lg: 18px;
+  --shadow:    0 1px 2px rgba(0,0,0,.35), 0 10px 30px -14px rgba(0,0,0,.5);
+  --shadow-lg: 0 28px 70px -24px rgba(0,0,0,.66);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Inter", sans-serif;
+  --font-display: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body:    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: var(--font-body);
   --ease: 200ms cubic-bezier(.2, .6, .2, 1);
 }
 :root[data-theme="light"] {
-  --bg:        #f6f8fb;
-  --bg-2:      #eef1f6;
+  --bg:        #f4f7f6;
+  --bg-2:      #ecf1f0;
   --panel:     #ffffff;
-  --panel-2:   #f3f5f9;
-  --panel-3:   #e9edf3;
-  --border:    #e2e6ee;
-  --border-2:  #cdd4e0;
-  --text:      #131824;
-  --muted:     #566072;
-  --faint:     #8a93a6;
-  --shadow:    0 1px 2px rgba(16,24,40,.06), 0 12px 28px -16px rgba(16,24,40,.18);
-  --shadow-lg: 0 24px 60px -20px rgba(16,24,40,.22);
+  --panel-2:   #f4f7f6;
+  --panel-3:   #e8edec;
+  --border:    #e0e6e4;
+  --border-2:  #cbd4d1;
+  --text:      #10201d;
+  --muted:     #566863;
+  --faint:     #859590;
+  --primary:   #0f766e;   /* darker teal reads on white */
+  --primary-2: #0b5c55;
+  --primary-fg:#ffffff;
+  --accent:    #2563eb;
+  --accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --glow:      color-mix(in srgb, var(--primary) 18%, transparent);
+  --shadow:    0 1px 2px rgba(16,32,29,.06), 0 14px 30px -18px rgba(16,32,29,.2);
+  --shadow-lg: 0 26px 64px -22px rgba(16,32,29,.24);
 }
 /* OS preference when the user hasn't chosen explicitly. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
-    --bg: #f6f8fb; --bg-2: #eef1f6; --panel: #fff; --panel-2: #f3f5f9;
-    --panel-3: #e9edf3; --border: #e2e6ee; --border-2: #cdd4e0;
-    --text: #131824; --muted: #566072; --faint: #8a93a6;
-    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 12px 28px -16px rgba(16,24,40,.18);
+    --bg: #f4f7f6; --bg-2: #ecf1f0; --panel: #fff; --panel-2: #f4f7f6;
+    --panel-3: #e8edec; --border: #e0e6e4; --border-2: #cbd4d1;
+    --text: #10201d; --muted: #566863; --faint: #859590;
+    --primary: #0f766e; --primary-2: #0b5c55; --primary-fg: #fff; --accent: #2563eb;
+    --accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+    --glow: color-mix(in srgb, var(--primary) 18%, transparent);
+    --shadow: 0 1px 2px rgba(16,32,29,.06), 0 14px 30px -18px rgba(16,32,29,.2);
   }
 }
 
@@ -62,13 +75,16 @@ body {
   margin: 0;
   font: 15px/1.55 var(--sans);
   background:
-    radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 60%),
+    radial-gradient(1100px 560px at 82% -8%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 60%),
+    radial-gradient(900px 520px at 6% 108%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 55%),
     var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
-h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
-h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: -.005em; }
+h1, h2 { font-family: var(--font-display); }
+h1 { font-size: 18px; margin: 0; letter-spacing: -.02em; font-weight: 600; }
+h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: -.01em; font-weight: 600; }
+.num, .stat-num, .metric { font-variant-numeric: tabular-nums; }
 a { color: var(--primary); text-underline-offset: 2px; }
 code { background: var(--panel-2); padding: 1px 6px; border-radius: 6px; font-size: .88em; font-family: var(--mono); }
 .muted { color: var(--muted); }
@@ -445,3 +461,98 @@ tbody tr:hover td { background: color-mix(in srgb, var(--primary) 6%, transparen
 .row-inline input { flex: 1; }
 .wiz-details { margin-top: 8px; }
 .wiz-details summary { cursor: pointer; }
+
+/* ═════════════════════════════════════════════════════════════════════
+   Console layer — CardBridge signature (2026-09)
+   Distinctive brand, bento Overview, display metrics, live status language.
+   ═════════════════════════════════════════════════════════════════════ */
+
+/* Brand: gradient relay mark + glow, display wordmark */
+.brand-mark { background: linear-gradient(135deg, var(--primary), var(--accent)); color: var(--primary-fg);
+  box-shadow: 0 0 22px -2px var(--glow); }
+.brand-name { font-family: var(--font-display); font-weight: 700; letter-spacing: -.01em; }
+.brand-sub { letter-spacing: .02em; }
+
+/* Sidebar: section labels + wider active accent */
+.nav-label { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint);
+  padding: 14px 12px 4px; font-weight: 600; }
+.side-nav + .nav-label { margin-top: 4px; }
+.nav-item { font-weight: 500; }
+.nav-item.active { background: linear-gradient(90deg, var(--accent-soft), transparent 70%); }
+.side-foot { border-top: 1px solid var(--border); padding-top: 10px; margin-top: auto; }
+.side-status { display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid var(--border);
+  border-radius: 11px; background: var(--panel-2); font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.side-status .side-status-sub { margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 500;
+  font-family: var(--mono); }
+
+/* Content header: kicker + a persistent status ribbon */
+.content-head .head-titles { display: flex; flex-direction: column; gap: 1px; }
+.page-kicker { font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--primary);
+  font-weight: 600; }
+.ribbon { display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: var(--muted); }
+.ribbon b { font-family: var(--font-display); color: var(--text); font-weight: 600; }
+.ribbon .rb-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2);
+  border: 1px solid var(--border); padding: 6px 11px; border-radius: 999px; font-weight: 600; color: var(--text); }
+@media (max-width: 980px) { .ribbon .rb-hide { display: none; } }
+
+/* Kicker used inside views/sections */
+.kicker { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--primary);
+  font-weight: 600; }
+
+/* Stat cards → confident display metrics */
+.stat-num { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: -.03em; }
+.stat-label { font-weight: 500; }
+
+/* ── Bento Overview ─────────────────────────────────────────────────── */
+.bento { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.tile { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  transition: transform var(--ease), box-shadow var(--ease), border-color var(--ease); }
+.tile:hover { border-color: var(--border-2); box-shadow: var(--shadow-lg); }
+.tile .tile-lab { font-size: 11px; color: var(--faint); font-weight: 600; text-transform: uppercase;
+  letter-spacing: .1em; display: flex; align-items: center; gap: 7px; }
+.tile .tile-lab .ico { width: 15px; height: 15px; }
+.tile .metric { font-family: var(--font-display); font-size: 38px; font-weight: 700; letter-spacing: -.03em;
+  line-height: 1; margin-top: 12px; }
+.tile .metric small { font-size: 15px; color: var(--faint); font-family: var(--font-body); font-weight: 500; }
+.tile .metric-sub { font-size: 12.5px; font-weight: 600; margin-top: 8px; color: var(--green); }
+.tile .metric-sub.flat { color: var(--faint); }
+.tile.span2 { grid-column: span 2; }
+.tile.hero { grid-column: span 2; grid-row: span 2; display: flex; flex-direction: column;
+  border-color: var(--border-2);
+  background:
+    radial-gradient(460px 200px at 100% 0%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--panel-3), var(--panel-2)); }
+.tile .corner { position: absolute; right: -26px; top: -26px; width: 120px; height: 120px; border-radius: 50%;
+  background: radial-gradient(circle, var(--glow), transparent 70%); pointer-events: none; }
+.badge-live { display: inline-flex; align-items: center; gap: 7px; background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 32%, transparent); border-radius: 999px;
+  padding: 5px 11px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; width: max-content; }
+.hero-title { font-family: var(--font-display); font-size: 15px; margin: 16px 0 2px; font-weight: 600; }
+.hero-big { font-family: var(--font-display); font-size: 52px; font-weight: 700; letter-spacing: -.03em;
+  margin: 12px 0 2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.ov-live-list { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 16px; }
+.ov-live-row { display: flex; align-items: center; gap: 11px; font-size: 13px; padding: 9px 11px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent); border: 1px solid var(--border);
+  border-radius: 10px; }
+.ov-live-row .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-live-row .rt { margin-left: auto; color: var(--faint); font-family: var(--mono); font-size: 11.5px; flex: none; }
+.ov-empty { color: var(--muted); font-size: 13px; padding-top: 16px; margin-top: auto; }
+
+/* Presence avatars (gradient rings) */
+.pav { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 11px;
+  font-weight: 700; color: var(--primary-fg); border: 2px solid var(--panel); flex: none;
+  background: linear-gradient(135deg, var(--primary), var(--accent)); }
+.pav-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tile .meter { margin-top: 14px; }
+
+@media (max-width: 1040px) { .bento { grid-template-columns: repeat(2, 1fr); }
+  .tile.hero { grid-column: span 2; grid-row: auto; } }
+@media (max-width: 620px) { .bento { grid-template-columns: 1fr; } .tile.span2, .tile.hero { grid-column: auto; } }
+
+/* Live status language: pulse the "live" dots everywhere */
+.status-live::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; vertical-align: middle;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent); animation: pulse-live 2s infinite; }
+@keyframes pulse-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
