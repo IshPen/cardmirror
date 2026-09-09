@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CardBridge — Setup Guide</title>
+<meta name="color-scheme" content="light dark" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<style>
+  /* Guide-specific layout — reuses the dashboard's tokens/components. */
+  body { min-height: 100vh; }
+  .guide { display: grid; grid-template-columns: 260px 1fr; gap: 0; max-width: 1180px; margin: 0 auto; }
+  /* Rail */
+  .g-rail { position: sticky; top: 0; align-self: start; height: 100vh; overflow: auto;
+    border-right: 1px solid var(--border); padding: 22px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .g-rail .side-brand { padding: 0 6px 6px; }
+  .g-progress-wrap { padding: 6px 6px 12px; }
+  .g-progress { height: 7px; border-radius: 999px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--border); }
+  .g-progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width .3s; }
+  .g-progress-label { font-size: 11.5px; color: var(--faint); margin-top: 6px; font-family: var(--mono); }
+  .g-navlink { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px;
+    color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: background var(--ease), color var(--ease); }
+  .g-navlink:hover { background: var(--panel-2); color: var(--text); }
+  .g-navlink.active { background: var(--accent-soft); color: var(--primary); }
+  .g-navnum { width: 22px; height: 22px; flex: none; border-radius: 999px; display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+  .g-navlink.done .g-navnum { background: var(--green); border-color: transparent; color: var(--primary-fg); }
+  .g-rail .g-back { margin-top: auto; }
+  /* Content */
+  .g-main { min-width: 0; padding: 34px 40px 80px; max-width: 860px; }
+  .g-hero { margin-bottom: 30px; }
+  .g-hero .kicker { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--primary); font-weight: 600; }
+  .g-hero h1 { font-family: var(--font-display); font-size: 34px; letter-spacing: -.02em; margin: 8px 0 8px; }
+  .g-hero p { color: var(--muted); font-size: 15.5px; line-height: 1.6; max-width: 62ch; margin: 0; }
+  .g-hero .g-meta { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .g-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; }
+  .g-step { border-top: 1px solid var(--border); padding: 30px 0; scroll-margin-top: 20px; }
+  .g-step-head { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; }
+  .g-step-num { width: 34px; height: 34px; flex: none; border-radius: 11px; display: grid; place-items: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--primary-fg);
+    background: linear-gradient(135deg, var(--primary), var(--accent)); box-shadow: 0 0 18px -4px var(--glow); }
+  .g-step h2 { font-family: var(--font-display); font-size: 21px; margin: 0; letter-spacing: -.01em; }
+  .g-time { margin-left: auto; font-size: 12px; color: var(--faint); font-weight: 600; white-space: nowrap; }
+  .g-body { color: var(--text); font-size: 15px; line-height: 1.65; }
+  .g-body p { margin: 10px 0; }
+  .g-body ol, .g-body ul { margin: 10px 0; padding-left: 22px; }
+  .g-body li { margin: 7px 0; }
+  .g-body strong { font-weight: 600; }
+  .g-note { display: flex; gap: 11px; padding: 12px 14px; border-radius: 11px; margin: 14px 0;
+    background: color-mix(in srgb, var(--amber) 9%, var(--panel-2)); border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--border)); font-size: 14px; }
+  .g-note.tip { background: color-mix(in srgb, var(--primary) 8%, var(--panel-2)); border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); }
+  .g-note .g-note-ico { flex: none; color: var(--amber); }
+  .g-note.tip .g-note-ico { color: var(--primary); }
+  .g-fig { margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--panel-2); }
+  .g-fig img { display: block; width: 100%; }
+  .g-fig figcaption { padding: 9px 14px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); }
+  .g-fig.svg { padding: 18px; }
+  .g-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0 4px; align-items: center; }
+  .g-copy { font-family: var(--mono); font-size: 12.5px; }
+  .g-done-row { display: flex; align-items: center; gap: 9px; margin-top: 18px; }
+  .g-done-row label { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 14px; color: var(--muted); user-select: none; }
+  .g-done-row input { width: 17px; height: 17px; accent-color: var(--green); cursor: pointer; }
+  .g-deploy img { height: 34px; display: block; }
+  kbd { font-family: var(--mono); font-size: .86em; background: var(--panel-3); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+  @media (max-width: 860px) {
+    .guide { grid-template-columns: 1fr; }
+    .g-rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    .g-rail .g-back { margin-top: 8px; }
+    .g-main { padding: 24px 20px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="guide">
+  <!-- Step rail -->
+  <aside class="g-rail">
+    <div class="side-brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 7-7"/><path d="M5 12a7 7 0 0 0 7 7"/><path d="M2 12a10 10 0 0 1 10-10"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <div><div class="brand-name">CardBridge</div><div class="brand-sub">Setup guide</div></div>
+    </div>
+    <div class="g-progress-wrap">
+      <div class="g-progress"><i id="g-progress-fill"></i></div>
+      <div class="g-progress-label" id="g-progress-label">0 of 7 done</div>
+    </div>
+    <a class="g-navlink" data-goto="step-1"><span class="g-navnum">1</span> Database (Supabase)</a>
+    <a class="g-navlink" data-goto="step-2"><span class="g-navnum">2</span> Relay (Render)</a>
+    <a class="g-navlink" data-goto="step-3"><span class="g-navnum">3</span> Keep it awake</a>
+    <a class="g-navlink" data-goto="step-4"><span class="g-navnum">4</span> Open the dashboard</a>
+    <a class="g-navlink" data-goto="step-5"><span class="g-navnum">5</span> Sign in to sync</a>
+    <a class="g-navlink" data-goto="step-6"><span class="g-navnum">6</span> Connect CardMirror</a>
+    <a class="g-navlink" data-goto="step-7"><span class="g-navnum">7</span> Share to students</a>
+    <a class="btn ghost small g-back" href="index.html">← Back to dashboard</a>
+  </aside>
+
+  <!-- Content -->
+  <main class="g-main">
+    <header class="g-hero">
+      <div class="kicker">Guided walkthrough</div>
+      <h1>Set up CardBridge in about 20 minutes</h1>
+      <p>A free, always-on, end-to-end-encrypted collaboration relay for your debate team — plus this
+        dashboard to watch it all. Three places to visit: a <strong>database</strong>, a <strong>relay</strong>,
+        and this <strong>dashboard</strong>. Follow along; tick each step as you go and your progress is saved.</p>
+      <div class="g-meta">
+        <span class="g-chip">💳 No credit card</span>
+        <span class="g-chip">🔒 End-to-end encrypted</span>
+        <span class="g-chip">⏱ ~20 minutes</span>
+      </div>
+      <figure class="g-fig svg" aria-label="How the pieces connect">
+        <svg viewBox="0 0 720 200" width="100%" role="img" font-family="Inter, sans-serif">
+          <defs>
+            <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0 0 L8 4 L0 8 z" fill="var(--faint)"/>
+            </marker>
+          </defs>
+          <!-- machines -->
+          <rect x="14" y="30" width="170" height="64" rx="12" fill="var(--panel-3)" stroke="var(--border-2)"/>
+          <text x="99" y="58" text-anchor="middle" fill="var(--text)" font-size="14" font-weight="600">CardMirror</text>
+          <text x="99" y="76" text-anchor="middle" fill="var(--muted)" font-size="11.5">coach + students</text>
+          <!-- relay -->
+          <rect x="275" y="30" width="170" height="64" rx="12" fill="var(--panel-3)" stroke="var(--border-2)"/>
+          <text x="360" y="58" text-anchor="middle" fill="var(--text)" font-size="14" font-weight="600">Relay · Render</text>
+          <text x="360" y="76" text-anchor="middle" fill="var(--muted)" font-size="11.5">stores ciphertext only</text>
+          <!-- db -->
+          <rect x="536" y="30" width="170" height="64" rx="12" fill="var(--panel-3)" stroke="var(--border-2)"/>
+          <text x="621" y="58" text-anchor="middle" fill="var(--text)" font-size="14" font-weight="600">Supabase</text>
+          <text x="621" y="76" text-anchor="middle" fill="var(--muted)" font-size="11.5">Postgres database</text>
+          <!-- dashboard -->
+          <rect x="536" y="132" width="170" height="52" rx="12" fill="none" stroke="var(--primary)" stroke-dasharray="4 3"/>
+          <text x="621" y="163" text-anchor="middle" fill="var(--primary)" font-size="13" font-weight="600">This dashboard</text>
+          <!-- arrows -->
+          <line x1="184" y1="62" x2="272" y2="62" stroke="var(--faint)" stroke-width="1.5" marker-end="url(#ah)"/>
+          <line x1="272" y1="52" x2="184" y2="52" stroke="var(--faint)" stroke-width="1.5" marker-end="url(#ah)"/>
+          <line x1="445" y1="62" x2="533" y2="62" stroke="var(--faint)" stroke-width="1.5" marker-end="url(#ah)"/>
+          <line x1="621" y1="132" x2="621" y2="96" stroke="var(--primary)" stroke-width="1.5" marker-end="url(#ah)"/>
+          <text x="228" y="40" text-anchor="middle" fill="var(--faint)" font-size="10.5">encrypted</text>
+          <text x="489" y="52" text-anchor="middle" fill="var(--faint)" font-size="10.5">stores</text>
+          <text x="640" y="118" fill="var(--primary)" font-size="10.5">reads metadata</text>
+        </svg>
+        <figcaption>The relay only ever sees ciphertext. The dashboard reads room <em>metadata</em> (and, once a student shares a key, decrypts docs in your browser).</figcaption>
+      </figure>
+    </header>
+
+    <!-- STEP 1 -->
+    <section class="g-step" id="step-1">
+      <div class="g-step-head"><span class="g-step-num">1</span><h2>Create your database</h2><span class="g-time">Supabase · ~7 min</span></div>
+      <div class="g-body">
+        <ol>
+          <li>Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">supabase.com</a> → <strong>New project</strong>. Pick a name and a strong database password — <strong>save that password</strong>, you'll need it in step 2.</li>
+          <li>When it's ready (~2 min), open <strong>Project Settings → Database → Connection string</strong> and select the <strong>Session pooler</strong> tab. Copy that URI and replace <code>[YOUR-PASSWORD]</code> with your DB password.</li>
+          <li>Open <strong>SQL Editor → New query</strong>, paste all of <a href="setup.sql" target="_blank" rel="noopener"><code>setup.sql</code></a>, and click <strong>Run</strong>. (Safe to re-run.)</li>
+        </ol>
+        <figure class="g-fig svg">
+          <svg viewBox="0 0 680 92" width="100%" font-family="Inter, sans-serif">
+            <rect x="8" y="20" width="150" height="52" rx="9" fill="var(--panel-3)" stroke="var(--primary)"/>
+            <text x="83" y="42" text-anchor="middle" fill="var(--primary)" font-size="12.5" font-weight="700">Session pooler</text>
+            <text x="83" y="59" text-anchor="middle" fill="var(--muted)" font-size="10.5">✓ use this</text>
+            <rect x="176" y="20" width="150" height="52" rx="9" fill="var(--panel-2)" stroke="var(--border)"/>
+            <text x="251" y="42" text-anchor="middle" fill="var(--faint)" font-size="12.5" font-weight="600">Direct</text>
+            <text x="251" y="59" text-anchor="middle" fill="var(--red)" font-size="10.5">✗ IPv6 — fails</text>
+            <text x="356" y="41" fill="var(--muted)" font-size="12">…?pgbouncer=true → contains</text>
+            <text x="356" y="60" fill="var(--text)" font-size="12.5" font-weight="600" font-family="var(--mono)">pooler.supabase.com</text>
+          </svg>
+          <figcaption>The one load-bearing choice: use <strong>Session pooler</strong>, never Direct (Direct is IPv6-only and fails silently on Render).</figcaption>
+        </figure>
+        <div class="g-note"><span class="g-note-ico">⚠</span><span>If your connection string doesn't say <code>pooler</code>, you have the wrong one. This is the single most common setup mistake.</span></div>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-1"> Mark step 1 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="g-step" id="step-2">
+      <div class="g-step-head"><span class="g-step-num">2</span><h2>Deploy the relay</h2><span class="g-time">Render · ~10 min</span></div>
+      <div class="g-body">
+        <p>Click the button, point Render at the repo, and paste your Session-pooler string when it asks for <code>DATABASE_URL</code>:</p>
+        <div class="g-actions g-deploy">
+          <a href="https://render.com/deploy?repo=https://github.com/IshPen/cardmirror" target="_blank" rel="noopener"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render"/></a>
+        </div>
+        <ol>
+          <li>Render reads <code>render.yaml</code> and proposes one free web service. It <strong>prompts for <code>DATABASE_URL</code></strong> — paste the pooler string from step 1. It generates a random <code>RELAY_TOKEN</code> for you.</li>
+          <li>Click <strong>Apply / Deploy</strong>. Wait until it shows <strong>Live</strong> and the health check passes.</li>
+          <li>Note two values: your <strong>Relay URL</strong> (service URL + <code>/relay</code>) and, from <strong>Environment → RELAY_TOKEN</strong>, your <strong>relay token</strong>.</li>
+        </ol>
+        <div class="g-note tip"><span class="g-note-ico">◆</span><span>Private repo? The one-click button needs a public repo — otherwise use Render → <strong>New → Blueprint</strong> and point it at your fork.</span></div>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-2"> Mark step 2 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="g-step" id="step-3">
+      <div class="g-step-head"><span class="g-step-num">3</span><h2>Keep it awake</h2><span class="g-time">UptimeRobot · ~5 min · optional</span></div>
+      <div class="g-body">
+        <p>Render's free tier sleeps after ~15 min idle and takes ~60s to wake — long enough to look broken mid-round. A free pinger prevents it.</p>
+        <ol>
+          <li>Sign up at <a href="https://uptimerobot.com" target="_blank" rel="noopener">uptimerobot.com</a> → <strong>Add New Monitor</strong> → type <strong>HTTP(s)</strong>.</li>
+          <li>URL = your relay URL + <code>/health</code> (e.g. <code>https://…onrender.com/relay/health</code>). Interval = <strong>5 minutes</strong>. Save.</li>
+        </ol>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-3"> Mark step 3 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="g-step" id="step-4">
+      <div class="g-step-head"><span class="g-step-num">4</span><h2>Open the dashboard &amp; connect</h2><span class="g-time">~3 min</span></div>
+      <div class="g-body">
+        <p>Open this dashboard's URL. If it's your first time, a <strong>guided wizard</strong> appears. Fill each step and hit its <strong>Test</strong> button — it live-checks the connection before you save.</p>
+        <figure class="g-fig">
+          <img src="guide/wizard.png" alt="The 4-step connect wizard: Supabase, Relay, Dashboard token, Coach account." loading="lazy"/>
+          <figcaption>The connect wizard. Steps 1–2 need your Supabase <strong>anon</strong> key + URL and the relay URL; step 3 the dashboard token; step 4 your coach sign-in (next).</figcaption>
+        </figure>
+        <ul>
+          <li><strong>Supabase</strong> — Project URL + <strong>anon</strong> key (Project Settings → API). Never the service-role key.</li>
+          <li><strong>Relay</strong> — the relay URL from step 2 (ends in <code>/relay</code>).</li>
+          <li><strong>Dashboard token</strong> — paste your <code>RELAY_TOKEN</code>, or <strong>Generate</strong> one and add it to the relay's tokens.</li>
+        </ul>
+        <div class="g-note"><span class="g-note-ico">⚠</span><span>Everything you enter stays in <strong>your browser</strong> (localStorage). The anon key is public by design; a connection string in the browser would be a public database — never paste one here.</span></div>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-4"> Mark step 4 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="g-step" id="step-5">
+      <div class="g-step-head"><span class="g-step-num">5</span><h2>Sign in to sync</h2><span class="g-time">coach account · ~2 min</span></div>
+      <div class="g-body">
+        <p>The coach account is what carries your tokens, document keys and shared code to <strong>any device</strong>. Create it once, then sign in.</p>
+        <ol>
+          <li>In Supabase → <strong>Authentication → Users → Add user</strong>. Enter an email + password and tick <strong>Auto Confirm User</strong>.</li>
+          <li>Back in the dashboard's wizard <strong>step 4 (Coach account)</strong>, enter that email + password and hit <strong>Sign in &amp; sync</strong> (or use the <strong>Sign in</strong> chip in the header later).</li>
+          <li>The header's sync chip turns green <strong>“Synced”</strong>. On a new device, just sign in with the same account and everything restores.</li>
+        </ol>
+        <div class="g-note tip"><span class="g-note-ico">◆</span><span>Your password is never stored — it derives the key that encrypts your vault, so you re-enter it each session to unlock sync. That's what keeps your data private even from Supabase.</span></div>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-5"> Mark step 5 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 6 -->
+    <section class="g-step" id="step-6">
+      <div class="g-step-head"><span class="g-step-num">6</span><h2>Point CardMirror at your relay</h2><span class="g-time">~2 min per machine</span></div>
+      <div class="g-body">
+        <p>On each teammate's <strong>CardMirror desktop</strong> (the full build — CardMirror Lite has no collaboration):</p>
+        <ol>
+          <li>Open <strong>Settings → Collaboration</strong>.</li>
+          <li>Paste the <strong>Relay URL</strong> and that machine's <strong>relay token</strong>.</li>
+          <li>Everyone must run the <strong>same CardMirror version</strong> — older builds can't read the current session format.</li>
+        </ol>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-6"> Mark step 6 done</label></div>
+      </div>
+    </section>
+
+    <!-- STEP 7 -->
+    <section class="g-step" id="step-7">
+      <div class="g-step-head"><span class="g-step-num">7</span><h2>Share to students &amp; open docs</h2><span class="g-time">~2 min</span></div>
+      <div class="g-body">
+        <p>So the dashboard can <strong>open</strong> a document, a student invites the dashboard's member code — the same invite flow they already use.</p>
+        <ol>
+          <li>Open the <strong>Member</strong> panel → <strong>Copy code</strong>. Optionally turn on <strong>“Use one code across my devices”</strong> so students invite it just once.</li>
+          <li>A student invites that code in CardMirror. The dashboard learns the doc's name and gets its key — now an <strong>Open</strong> button appears on that session.</li>
+          <li>Open it to view/edit with native styling, go live, export, or send notes.</li>
+        </ol>
+        <figure class="g-fig">
+          <img src="guide/overview.png" alt="The CardBridge overview once set up: live sessions, presence, storage." loading="lazy"/>
+          <figcaption>Once connected, the Overview shows live sessions, who's online, storage, and relay health at a glance.</figcaption>
+        </figure>
+        <div class="g-done-row"><label><input type="checkbox" data-step="step-7"> Mark step 7 done</label></div>
+        <p style="margin-top:22px"><a class="btn primary" href="index.html">Open the dashboard →</a></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // Match the dashboard's saved theme.
+  try { var t = localStorage.getItem('debate-relay-theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+
+  var STEPS = ['step-1','step-2','step-3','step-4','step-5','step-6','step-7'];
+  var PKEY = 'cardbridge-guide-progress';
+  function loadProg() { try { return JSON.parse(localStorage.getItem(PKEY) || '{}') || {}; } catch (e) { return {}; } }
+  function saveProg(p) { try { localStorage.setItem(PKEY, JSON.stringify(p)); } catch (e) {} }
+
+  function render() {
+    var p = loadProg();
+    var done = 0;
+    STEPS.forEach(function (id) {
+      var on = !!p[id];
+      if (on) done++;
+      var cb = document.querySelector('input[data-step="' + id + '"]');
+      if (cb) cb.checked = on;
+      var link = document.querySelector('.g-navlink[data-goto="' + id + '"]');
+      if (link) link.classList.toggle('done', on);
+    });
+    var pct = Math.round((done / STEPS.length) * 100);
+    document.getElementById('g-progress-fill').style.width = pct + '%';
+    document.getElementById('g-progress-label').textContent = done + ' of ' + STEPS.length + ' done';
+  }
+
+  document.querySelectorAll('input[data-step]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var p = loadProg(); p[cb.getAttribute('data-step')] = cb.checked; saveProg(p); render();
+    });
+  });
+  document.querySelectorAll('.g-navlink[data-goto]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      var el = document.getElementById(a.getAttribute('data-goto'));
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // Scrollspy: highlight the step nearest the top.
+  var spy = function () {
+    var best = null, bestTop = Infinity;
+    STEPS.forEach(function (id) {
+      var el = document.getElementById(id); if (!el) return;
+      var top = Math.abs(el.getBoundingClientRect().top - 90);
+      if (top < bestTop) { bestTop = top; best = id; }
+    });
+    document.querySelectorAll('.g-navlink').forEach(function (l) {
+      l.classList.toggle('active', l.getAttribute('data-goto') === best);
+    });
+  };
+  window.addEventListener('scroll', spy, { passive: true });
+  render(); spy();
+</script>
+</body>
+</html>

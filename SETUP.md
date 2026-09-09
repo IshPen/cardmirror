@@ -1,4 +1,11 @@
-# Set up Debate Relay in ~20 minutes
+# Set up CardBridge in ~20 minutes
+
+> Prefer a **guided walkthrough with pictures and progress tracking**? Open
+> [`dashboard/guide.html`](./dashboard/guide.html) (also linked from the setup
+> wizard, and live at `https://<your-user>.github.io/<repo>/guide.html`). The
+> text version below covers the same steps.
+
+
 
 A free, always-on, end-to-end-encrypted collaboration relay for your debate
 team — plus a coach dashboard to watch it all. **No credit card. No server to
