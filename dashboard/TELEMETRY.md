@@ -45,3 +45,17 @@ bottom of `telemetry.sql`.
 
 > The anon key is safe to commit: it's write-only by RLS. Don't ever put a
 > service-role key in the dashboard.
+
+## Why exposing the key is fine + the origin guard
+
+The anon key is **public by design** (it ships in every visitor's browser).
+Secrecy isn't what protects the data — **Row-Level Security** is: `anon` may
+`INSERT` but has no `SELECT` policy, so no one can ever read events back with the
+key. Only you (owner / service-role) can read aggregates.
+
+The only residual risk is someone POSTing *fake* events to skew your numbers. To
+blunt that, `telemetry.js` has an **origin guard** — `TELEMETRY_HOSTS` — so only
+pages served from your official host report. Forks and local copies that still
+carry the key stay silent. Forking for your own deployment? Put your Pages host
+in `TELEMETRY_HOSTS` (and your own `TELEMETRY_URL`/`TELEMETRY_KEY`); add
+`'localhost'` to test locally; or set it to `[]` to disable the guard.

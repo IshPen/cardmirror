@@ -16,8 +16,14 @@
 // telemetry, run dashboard/telemetry.sql in it, then paste that project's URL
 // and ANON (public) key below. Until both are filled, telemetry is a NO-OP.
 window.DRTelemetry = (function () {
-  const TELEMETRY_URL = ''; // e.g. 'https://abcd.supabase.co'   ← maintainer fills
-  const TELEMETRY_KEY = ''; // that project's ANON (public) key   ← maintainer fills
+  const TELEMETRY_URL = 'https://yyflcwfeybahkyicykxp.supabase.co'; // e.g. 'https://abcd.supabase.co'   ← maintainer fills
+  const TELEMETRY_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Zmxjd2ZleWJhaGt5aWN5a3hwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5MjgyMTAsImV4cCI6MjEwNDUwNDIxMH0.1RHfRVi-xSK_k7XOBfN2Fq9jGCD1WRGUgRYqw28sfIo'; // that project's ANON (public) key   ← maintainer fills
+
+  // Origin guard: only pages served from these hostnames report, so forks and
+  // local copies (which still carry the public key) never pollute your metrics.
+  // Set to [] to disable the guard. Forking to your own Pages? put YOUR host
+  // here (and your own TELEMETRY_URL/KEY above). Add 'localhost' to test locally.
+  const TELEMETRY_HOSTS = ['ishpen.github.io'];
 
   const APP_VERSION = 'cardbridge-2026-09';
   const ID_KEY = 'cardbridge-anon-id';
@@ -31,7 +37,11 @@ window.DRTelemetry = (function () {
     const d = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
     return d === '1' || d === 'yes';
   }
-  function enabled() { return configured() && !isOptedOut() && !dntOn(); }
+  function originOk() {
+    if (!TELEMETRY_HOSTS.length) return true; // guard disabled
+    try { return TELEMETRY_HOSTS.indexOf(location.hostname) !== -1; } catch { return false; }
+  }
+  function enabled() { return configured() && originOk() && !isOptedOut() && !dntOn(); }
 
   function anonId() {
     try {
