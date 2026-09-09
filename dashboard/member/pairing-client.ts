@@ -22,6 +22,8 @@ import {
   webSeal,
   webRoutingId,
   webOpen,
+  webEnsureExtractableIdentity,
+  webImportIdentity,
   type SealedBundle,
 } from '../../src/editor/pairing/web-pairing-crypto.js';
 import { parseRoomInvite } from '../../src/editor/pairing/room-invite.js';
@@ -57,6 +59,19 @@ function b64(bytes: Uint8Array): string {
 /** This dashboard's shareable member code — give it to students to invite. */
 export async function getMemberCode(): Promise<string> {
   return webOwnPublicCode();
+}
+
+/** Portable identity: make this browser's identity extractable (minting a new
+ *  code once if it wasn't) and hand back the private JWK + code so app.js can
+ *  stash it in the encrypted vault. See webEnsureExtractableIdentity. */
+export async function exportIdentity(): Promise<{ jwk: JsonWebKey; code: string }> {
+  return webEnsureExtractableIdentity();
+}
+
+/** Adopt a shared identity pulled from the vault, so this browser answers to
+ *  the coach's one shared `cmk1.…` code. Returns the code. */
+export async function importIdentity(jwk: JsonWebKey): Promise<string> {
+  return webImportIdentity(jwk);
 }
 
 /** This dashboard's mailbox routing id (SHA256(pubkey)[0:16], base64url) —

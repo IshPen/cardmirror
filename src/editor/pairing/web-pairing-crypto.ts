@@ -218,6 +218,73 @@ export async function webOpen(bundle: SealedBundle): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
+// ── Portable identity (opt-in, DASHBOARD ONLY) ───────────────────────
+// By default (above) the private key is NON-EXTRACTABLE — page JS can't copy
+// it out, so an identity is pinned to one browser. The coach dashboard can opt
+// into a *portable* identity so one `cmk1.…` code works across all the coach's
+// devices (students invite it once): it mints an EXTRACTABLE key, exports it,
+// and syncs it inside the dashboard's password-encrypted vault. The main app
+// never calls these, so its keys stay non-extractable. Tradeoff is deliberate
+// and scoped to the dashboard's own pairing key (never a student's).
+
+/** Export this browser's identity as a private JWK — only succeeds if the key
+ *  is extractable (i.e. a portable identity). Returns null for a normal
+ *  non-extractable key. */
+export async function webExportIdentity(): Promise<{ jwk: JsonWebKey; code: string } | null> {
+  const { keyPair, pubRaw } = await loadOrCreate();
+  try {
+    const jwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+    return { jwk, code: CODE_PREFIX + b64url(pubRaw) };
+  } catch {
+    return null; // non-extractable — expected for the default identity
+  }
+}
+
+/** Ensure this browser holds an EXTRACTABLE identity so it can be synced. If
+ *  the current key is already extractable it's reused (code unchanged);
+ *  otherwise a fresh extractable keypair is minted (code CHANGES once, so the
+ *  coach must re-share the new code). Returns the private JWK + `cmk1.` code. */
+export async function webEnsureExtractableIdentity(): Promise<{ jwk: JsonWebKey; code: string }> {
+  const existing = await webExportIdentity();
+  if (existing) return existing;
+  const keyPair = (await crypto.subtle.generateKey({ name: 'X25519' }, true, [
+    'deriveBits',
+  ])) as CryptoKeyPair;
+  const pubJwk = (await crypto.subtle.exportKey('jwk', keyPair.publicKey)) as { x?: string };
+  const pubRaw = fromB64url(pubJwk.x ?? '');
+  const db = await openDb();
+  try {
+    await idbPut(db, { id: KEY_ID, keyPair, pubRaw: pubRaw.buffer as ArrayBuffer });
+    cached = { keyPair, pubRaw };
+  } finally {
+    db.close();
+  }
+  const jwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+  return { jwk, code: CODE_PREFIX + b64url(pubRaw) };
+}
+
+/** Install a shared identity from a private JWK (kept extractable so any of the
+ *  coach's devices can re-sync it). Replaces this browser's pairing identity —
+ *  after this the dashboard answers to the shared `cmk1.…` code. */
+export async function webImportIdentity(jwk: JsonWebKey): Promise<string> {
+  const privateKey = await crypto.subtle.importKey(
+    'jwk', jwk, { name: 'X25519' }, true, ['deriveBits'],
+  );
+  const publicKey = await crypto.subtle.importKey(
+    'jwk', { kty: 'OKP', crv: 'X25519', x: jwk.x }, { name: 'X25519' }, true, [],
+  );
+  const pubRaw = fromB64url(jwk.x ?? '');
+  const keyPair = { privateKey, publicKey } as CryptoKeyPair;
+  const db = await openDb();
+  try {
+    await idbPut(db, { id: KEY_ID, keyPair, pubRaw: pubRaw.buffer as ArrayBuffer });
+    cached = { keyPair, pubRaw };
+  } finally {
+    db.close();
+  }
+  return CODE_PREFIX + b64url(pubRaw);
+}
+
 /** Test hook: drop the module cache (not the stored key). */
 export function __resetWebPairingCryptoForTests(): void {
   cached = null;

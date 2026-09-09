@@ -510,6 +510,8 @@ async function showMember() {
   $('member-code').textContent = '…';
   fillRequestRecipients();
   $('member-routing').textContent = '…';
+  if ($('member-share-status')) $('member-share-status').textContent = '';
+  reflectPortableIdentity();
   try {
     const m = await loadMember();
     $('member-code').textContent = await m.getMemberCode();
@@ -1355,6 +1357,11 @@ async function syncTokensToRelay() {
 // ── Cross-device sync (encrypted vault, see sync.js) ─────────────────
 // A snapshot of everything worth carrying between devices. `prefs` is
 // non-secret (theme/nav); `vault` holds the secrets sync.js encrypts.
+// The dashboard's portable pairing identity (private JWK), when the coach has
+// opted into one shared member code across devices. Held here so it rides along
+// in every vault push (and is preserved, never clobbered, once known).
+let _vaultIdentity = null;
+
 function syncSnapshot() {
   return {
     prefs: { theme: localStorage.getItem(THEME_KEY) || '', nav: navLevels() },
@@ -1363,6 +1370,7 @@ function syncSnapshot() {
       relaytoken: (config && config.relaytoken) || '',
       roster: (config && config.roster) || '',
       knownRooms: knownRoomsStore(),
+      identity: _vaultIdentity || null,
     },
   };
 }
@@ -1388,6 +1396,9 @@ function syncHydrate(row) {
     // Union known-rooms by roomId (local wins on a shared id — it may be fresher).
     const merged = { ...(v.knownRooms || {}), ...knownRoomsStore() };
     localStorage.setItem(KNOWN_ROOMS_KEY, JSON.stringify(merged));
+    // Capture a portable identity if the vault carries one (adopted async in
+    // syncOnSignIn). Preserved so later pushes don't wipe it.
+    if (v.identity) _vaultIdentity = v.identity;
   }
 }
 
@@ -1418,6 +1429,15 @@ async function syncOnSignIn(password) {
   try {
     const row = await DRSync.pull();
     if (!row.fresh) syncHydrate(row);
+    // If the vault carries a shared pairing identity, adopt it on this device
+    // so the dashboard answers to the coach's one shared member code.
+    if (_vaultIdentity) {
+      try {
+        const m = await loadMember();
+        await m.importIdentity(_vaultIdentity);
+        config.portableIdentity = true; saveConfig(config);
+      } catch (e) { console.warn('shared identity import failed', e); }
+    }
     await syncPush();                 // push merged (or first-ever) state back
     if (typeof renderTeam === 'function') renderTeam();
     refreshAll();
@@ -1442,6 +1462,40 @@ function startSyncLoop() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && DRSync.ready() && syncSig() !== _lastSyncSig) syncPush();
   });
+}
+
+// Opt into ONE shared member code across all the coach's devices: mint an
+// extractable identity here, stash it (encrypted) in the vault, and push. Other
+// devices adopt it on sign-in. Changes this dashboard's code once (re-share it).
+async function enableSharedIdentity() {
+  const status = $('member-share-status');
+  if (!DRSync.ready()) {
+    if (status) status.textContent = 'Sign in first (Tokens → Sign in) so it can sync.';
+    return;
+  }
+  if (status) status.textContent = 'Enabling…';
+  try {
+    const m = await loadMember();
+    const { jwk, code } = await m.exportIdentity();
+    _vaultIdentity = jwk;
+    config.portableIdentity = true; saveConfig(config);
+    await syncPush();
+    $('member-code').textContent = code;
+    reflectPortableIdentity();
+    if (status) status.textContent =
+      'Shared code on. Re-share this code to students once — it now works on all your devices.';
+  } catch (e) {
+    if (status) status.textContent = 'Could not enable: ' + String(e.message || e);
+  }
+}
+
+// Reflect portable-identity state in the Member panel.
+function reflectPortableIdentity() {
+  const on = !!(config && config.portableIdentity);
+  const btn = $('member-share-identity');
+  const badge = $('member-share-badge');
+  if (btn) btn.textContent = on ? 'Re-sync shared code' : 'Use one code across my devices';
+  if (badge) badge.classList.toggle('hidden', !on);
 }
 
 function renderTeam() {
@@ -1676,6 +1730,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshData();
     $('member-status').textContent = 'Checked for invites. Any new rooms now show in Sessions.';
   };
+  if ($('member-share-identity')) $('member-share-identity').onclick = enableSharedIdentity;
   $('viewer-close').onclick = closeViewer;
   $('viewer-live-btn').onclick = goLive;
   $('viewer-comments-btn').onclick = toggleComments;
