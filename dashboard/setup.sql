@@ -112,8 +112,16 @@ alter table relay_tokens enable row level security;
 revoke all on relay_tokens from anon;                       -- public key: nothing
 grant select, insert, update, delete on relay_tokens to authenticated;
 drop policy if exists "coach manages tokens" on relay_tokens;
+--  ⚠ SINGLE-COACH ONLY: this policy lets ANY signed-in Auth user in THIS
+--  project read/change EVERY token (there is no per-owner column to scope on).
+--  That's fine because a coach's project has exactly one Auth user — YOU. Do
+--  NOT add other Auth users to this project, or share it between coaches.
+--  Multi-coach? give relay_tokens an `owner uuid` column and scope below.
 create policy "coach manages tokens"
   on relay_tokens for all to authenticated using (true) with check (true);
+--  Tighter alternative — pin to your email so an extra Auth user can't read them:
+--    using ((auth.jwt() ->> 'email') = 'you@example.com')
+--    with check ((auth.jwt() ->> 'email') = 'you@example.com')
 
 -- 5 ── Cross-device dashboard state (optional) ───────────────────────
 --  One row PER COACH (keyed to their auth.users id), readable/writable only

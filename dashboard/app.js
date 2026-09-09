@@ -1328,9 +1328,18 @@ function relayTokensJson() {
 // Signs the coach in via Supabase Auth (no new dependency — plain REST),
 // then writes the whole team to the relay_tokens table as an authenticated
 // user. The relay picks it up within ~30s. No Render, no redeploy.
+// The coach's Supabase access token (a bearer JWT that authorizes vault + token
+// writes) is kept in sessionStorage, NOT localStorage — so it clears when the
+// tab closes and never lingers on a shared machine. The vault needs the
+// password re-entered each session anyway, so this costs no real convenience.
 const AUTH_KEY = 'debate-relay-auth';
-function authToken() { try { return localStorage.getItem(AUTH_KEY) || null; } catch { return null; } }
-function setAuthToken(t) { try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {} }
+function authToken() { try { return sessionStorage.getItem(AUTH_KEY) || null; } catch { return null; } }
+function setAuthToken(t) {
+  try {
+    if (t) sessionStorage.setItem(AUTH_KEY, t); else sessionStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(AUTH_KEY); // migrate away from any previously-persisted token
+  } catch {}
+}
 function authStatusText() { return authToken() ? 'Signed in ✓' : 'Not signed in'; }
 
 async function coachSignIn(email, password) {
@@ -1496,6 +1505,18 @@ async function enableSharedIdentity() {
     if (status) status.textContent = 'Sign in first (Tokens → Sign in) so it can sync.';
     return;
   }
+  // Security note: portability requires making the pairing key extractable, so
+  // it can be exported into your (encrypted) vault. That's a deliberate trade —
+  // make sure the coach understands before flipping it on.
+  const ok = confirm(
+    'Enable one shared code across your devices?\n\n' +
+    'This makes the dashboard\'s pairing key portable (exportable) so it can sync ' +
+    'in your encrypted vault. Trade-off: unlike the default per-browser key, a ' +
+    'portable key could in principle be extracted by a malicious script on this ' +
+    'page. It only affects THIS dashboard\'s own code (never a student\'s), and ' +
+    'it stays encrypted at rest. Enable it?'
+  );
+  if (!ok) { if (status) status.textContent = 'Cancelled — still one code per browser.'; return; }
   if (status) status.textContent = 'Enabling…';
   try {
     const m = await loadMember();
