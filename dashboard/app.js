@@ -157,6 +157,7 @@ async function refreshData() {
   await ensureCoachId();
   sendHeartbeat();          // anonymous, throttled
   reportNewDocs(rooms);     // one hashed doc id per newly-seen room
+  checkBackupReminder();    // nudge if it's been >7 days
 }
 let _lastData = null;
 
@@ -904,6 +905,31 @@ function exitHistoryToDoc() {
   if (_viewerRoomId) openDoc(_viewerRoomId); // reopen the current (latest) doc
 }
 
+// A gentle reminder to back up, since a static site can't run a scheduled job
+// when it's closed. Shows once per load if it's been >7 days (or never).
+const BACKUP_KEY = 'cardbridge-last-backup';
+let _backupReminderDismissed = false;
+function checkBackupReminder() {
+  const stack = $('notice-stack');
+  if (!stack || _backupReminderDismissed || document.getElementById('backup-reminder')) return;
+  const openable = Object.values(knownRoomsStore()).filter((r) => r && r.keyB64).length;
+  if (!openable) return; // nothing the dashboard can export
+  let last = 0; try { last = Number(localStorage.getItem(BACKUP_KEY)) || 0; } catch {}
+  const days = last ? Math.floor((Date.now() - last) / 864e5) : Infinity;
+  if (days < 7) return;
+  const el = document.createElement('div');
+  el.id = 'backup-reminder';
+  el.className = 'notice';
+  el.innerHTML = '<span class="notice-msg">' +
+    (last ? `It's been ${days} days since your last backup` : 'You haven\'t backed up yet') +
+    ` — ${openable} openable doc(s). A backup downloads a .zip of .docx exports.</span>` +
+    '<button class="btn primary small" id="backup-reminder-go" type="button">Backup now</button>' +
+    '<button class="btn ghost small" id="backup-reminder-x" type="button">Dismiss</button>';
+  stack.appendChild(el);
+  $('backup-reminder-go').onclick = () => { switchView('sessions'); backupAll(); };
+  $('backup-reminder-x').onclick = () => { _backupReminderDismissed = true; el.remove(); };
+}
+
 async function backupAll() {
   const store = knownRoomsStore();
   const ids = Object.keys(store).filter((id) => store[id] && store[id].keyB64);
@@ -923,7 +949,9 @@ async function backupAll() {
     const res = await v.backupAllDocx(entries, ymd, (p) => {
       status.textContent = `Exporting ${p.done}/${p.total}…` + (p.ok ? '' : ` (skipped ${p.name})`);
     });
-    status.textContent = `Backed up ${res.ok} doc(s)${res.failed ? `, ${res.failed} skipped` : ''} — downloaded debate-relay-backup-${ymd}.zip.`;
+    status.textContent = `Backed up ${res.ok} doc(s)${res.failed ? `, ${res.failed} skipped` : ''} — downloaded cardbridge-backup-${ymd}.zip.`;
+    try { localStorage.setItem(BACKUP_KEY, String(Date.now())); } catch {}
+    const b = document.getElementById('backup-reminder'); if (b) b.remove();
   } catch (e) {
     status.textContent = 'Backup failed: ' + (e.message || e);
   } finally { btn.disabled = false; btn.textContent = old; }
