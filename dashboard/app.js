@@ -1498,6 +1498,63 @@ function reflectPortableIdentity() {
   if (badge) badge.classList.toggle('hidden', !on);
 }
 
+// ── Coach sign-in (unlocks the vault) ────────────────────────────────
+// One entry point used by the wizard, the Tokens panel, and the sign-in prompt.
+// Authenticates, then pulls + restores the vault for this session. Remembers the
+// email (never the password) so returning sessions can pre-fill it.
+async function doCoachSignIn(email, password, setStatus) {
+  setStatus = setStatus || (() => {});
+  email = (email || '').trim();
+  if (!email || !password) { setStatus('Enter your coach email and password.'); return false; }
+  setStatus('Signing in…');
+  try {
+    await coachSignIn(email, password);
+    if (!config) config = { relay: '', supabase: '', anon: '' };
+    config.authEmail = email; saveConfig(config);
+    setStatus('Signed in. Restoring your data…');
+    await syncOnSignIn(password);
+    setStatus('Signed in — tokens, documents & shared code synced.');
+    if ($('tk-auth-status')) $('tk-auth-status').textContent = authStatusText();
+    updateSigninBanner();
+    return true;
+  } catch (e) { setStatus(String(e.message || e)); return false; }
+}
+
+// Is cross-device sync unlocked this session? (password held + configured)
+function syncUnlocked() { return !!(window.DRSync && DRSync.ready()); }
+
+// A dismissible prompt shown when Supabase is configured but the vault isn't
+// unlocked this session (fresh load / new browser / expired token) — so the
+// coach is nudged to sign in instead of silently getting no sync.
+let _signinBannerDismissed = false;
+function updateSigninBanner() {
+  const stack = $('notice-stack');
+  if (!stack) return;
+  const existing = document.getElementById('signin-banner');
+  const need = config && config.supabase && !syncUnlocked() && !_signinBannerDismissed;
+  if (!need) { if (existing) existing.remove(); return; }
+  if (existing) return;
+  const el = document.createElement('div');
+  el.id = 'signin-banner';
+  el.className = 'notice';
+  el.innerHTML =
+    '<span class="notice-msg">Sign in to sync your tokens, documents and shared code across devices.</span>' +
+    '<button class="btn primary small" id="signin-banner-btn" type="button">Sign in</button>' +
+    '<button class="btn ghost small" id="signin-banner-x" type="button">Dismiss</button>';
+  stack.appendChild(el);
+  $('signin-banner-btn').onclick = openSignin;
+  $('signin-banner-x').onclick = () => { _signinBannerDismissed = true; el.remove(); };
+}
+
+function openSignin() {
+  $('si-status').textContent = '';
+  $('si-email').value = (config && config.authEmail) || '';
+  $('si-password').value = '';
+  $('signin-modal').classList.remove('hidden');
+  setTimeout(() => { const p = $('si-password'); if (p) p.focus(); }, 0);
+}
+function closeSignin() { $('signin-modal').classList.add('hidden'); }
+
 function renderTeam() {
   const body = $('team-body');
   const list = team();
@@ -1616,6 +1673,7 @@ function showConfig() {
     $('cfg-anon').value = config.anon || '';
     $('cfg-relaytoken').value = config.relaytoken || '';
     $('cfg-roster').value = config.roster || '';
+    if ($('cfg-auth-email')) $('cfg-auth-email').value = config.authEmail || '';
   }
   $('app-shell').classList.add('hidden');
   $('config-panel').classList.remove('hidden');
@@ -1695,15 +1753,17 @@ document.addEventListener('DOMContentLoaded', () => {
   $('tk-signin').onclick = async () => {
     $('tk-status').textContent = 'Signing in…';
     const pw = $('tk-password').value; // captured before we clear the field
-    try {
-      await coachSignIn($('tk-email-auth').value.trim(), pw);
-      $('tk-password').value = '';
-      $('tk-auth-status').textContent = authStatusText();
-      $('tk-status').textContent = 'Signed in. Restoring your synced data…';
-      await syncOnSignIn(pw);
-      $('tk-status').textContent = 'Signed in. Tokens + settings synced across your devices.';
-    } catch (e) { $('tk-status').textContent = String(e.message || e); }
+    await doCoachSignIn($('tk-email-auth').value.trim(), pw, (m) => { $('tk-status').textContent = m; });
+    $('tk-password').value = '';
   };
+  if ($('test-signin')) $('test-signin').onclick = async () => {
+    await doCoachSignIn($('cfg-auth-email').value, $('cfg-auth-password').value, (m) => { $('signin-status').textContent = m; });
+  };
+  if ($('si-signin')) $('si-signin').onclick = async () => {
+    const ok = await doCoachSignIn($('si-email').value, $('si-password').value, (m) => { $('si-status').textContent = m; });
+    if (ok) { $('si-password').value = ''; closeSignin(); }
+  };
+  if ($('si-cancel')) $('si-cancel').onclick = closeSignin;
   $('sync-now').onclick = async () => {
     if (!DRSync.ready()) { setSyncStatus('Sign in above first.'); return; }
     setSyncStatus('Syncing…'); await syncPush();
@@ -1803,9 +1863,15 @@ document.addEventListener('DOMContentLoaded', () => {
     saveConfig(cfg);
     showDashboard();
     refreshAll();
+    // If they filled in the coach account, sign in + sync right away so a new
+    // browser is fully set up without hunting for the Tokens panel.
+    const aEmail = $('cfg-auth-email') && $('cfg-auth-email').value;
+    const aPw = $('cfg-auth-password') && $('cfg-auth-password').value;
+    if (aEmail && aPw) doCoachSignIn(aEmail, aPw, (m) => { $('signin-status').textContent = m; });
+    else updateSigninBanner();
   };
 
-  if (config) { showDashboard(); refreshAll(); }
+  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); }
   else { showConfig(); }
 
   // Auto-refresh every 60s while the tab is open.

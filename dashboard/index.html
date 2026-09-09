@@ -96,6 +96,33 @@
         </details>
       </div>
 
+      <!-- Step 4 — Coach account (sign in for cross-device sync) -->
+      <div class="wiz-step">
+        <div class="wiz-step-head">
+          <span class="wiz-num">4</span>
+          <h3>Coach account <span class="muted small">— sign in to sync across devices</span></h3>
+          <a class="wiz-link" href="https://supabase.com/dashboard/project/_/auth/users" target="_blank" rel="noopener">Supabase → Users ↗</a>
+        </div>
+        <p class="muted small">
+          This is what carries your tokens, document keys and shared code to any
+          device. <strong>Create it once</strong> in Supabase → Authentication →
+          Users → <strong>Add user</strong> (tick <em>Auto Confirm User</em>), then
+          sign in here. Read-only monitoring works without it, but Open / sync do not.
+        </p>
+        <div class="row">
+          <label>Coach email
+            <input id="cfg-auth-email" type="email" placeholder="coach@school.edu" autocomplete="username" />
+          </label>
+          <label>Password
+            <input id="cfg-auth-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+          </label>
+        </div>
+        <div class="wiz-actions">
+          <button id="test-signin" class="btn small" type="button">Sign in &amp; sync</button>
+          <span id="signin-status" class="wiz-status"></span>
+        </div>
+      </div>
+
       <div class="config-actions">
         <button id="cfg-save" class="btn primary" type="button">Save &amp; open dashboard</button>
         <button id="cfg-cancel" class="btn ghost" type="button">Cancel</button>
@@ -472,6 +499,31 @@
         </p>
         <div class="code" id="member-routing">…</div>
       </details>
+    </div>
+  </div>
+
+  <!-- Coach sign-in modal (unlock cross-device sync for this session) -->
+  <div id="signin-modal" class="modal hidden">
+    <div class="modal-card card">
+      <h2>Sign in to sync</h2>
+      <p class="muted">
+        Unlock this session so your tokens, documents and shared code sync from
+        the cloud. Uses your Supabase coach account (create one in Supabase →
+        Authentication → Users → Add user, <em>Auto Confirm</em>).
+      </p>
+      <div class="row">
+        <label>Coach email
+          <input id="si-email" type="email" placeholder="coach@school.edu" autocomplete="username" />
+        </label>
+        <label>Password
+          <input id="si-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+        </label>
+      </div>
+      <p class="muted small" id="si-status"></p>
+      <div class="config-actions">
+        <button id="si-signin" class="btn primary" type="button">Sign in &amp; sync</button>
+        <button id="si-cancel" class="btn ghost" type="button">Not now</button>
+      </div>
     </div>
   </div>
 
