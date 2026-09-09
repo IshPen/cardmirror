@@ -58,18 +58,24 @@ window.DRTelemetry = (function () {
     return _sessionId;
   }
 
-  // Strict allowlist — ONLY these keys, and only if numeric/boolean, are sent.
+  // Strict allowlist — numeric/boolean counters ONLY for these keys.
   const ALLOWED = new Set([
     'sessions', 'liveSessions', 'rooms', 'team', 'knownDocs', 'online',
     'syncEnabled', 'sharedIdentity', 'viewerUsed', 'signedIn',
   ]);
+  // These may be short STRINGS — but ONLY one-way hashes (pseudonymous ids the
+  // app computes: a per-coach id and per-document id). Never a raw url/id/name.
+  const ALLOWED_STR = new Set(['coach', 'doc']);
   function clean(props) {
     const out = {};
     if (props) for (const k of Object.keys(props)) {
-      if (!ALLOWED.has(k)) continue;
       const v = props[k];
-      if (typeof v === 'number' && isFinite(v)) out[k] = v;
-      else if (typeof v === 'boolean') out[k] = v;
+      if (ALLOWED.has(k)) {
+        if (typeof v === 'number' && isFinite(v)) out[k] = v;
+        else if (typeof v === 'boolean') out[k] = v;
+      } else if (ALLOWED_STR.has(k) && typeof v === 'string') {
+        out[k] = v.slice(0, 64); // hashes are 16 hex; cap defensively
+      }
     }
     return out;
   }

@@ -154,7 +154,9 @@ async function refreshData() {
   renderActivityFeed(rooms, registry, partsByRoom);
   renderHeatmap(rooms);
   renderTeamView(rooms, registry, partsByRoom);
-  sendHeartbeat(); // anonymous, throttled
+  await ensureCoachId();
+  sendHeartbeat();          // anonymous, throttled
+  reportNewDocs(rooms);     // one hashed doc id per newly-seen room
 }
 let _lastData = null;
 
@@ -764,6 +766,7 @@ async function goLive() {
   if (!kr || !kr.keyB64) return;
   if (_liveHandle) { stopLive(); $('viewer-live-btn').textContent = '● Go live'; return; }
   if (!config.relaytoken) { setLiveStatus('error', 'No dashboard relay token (add a Dashboard entry in Tokens).'); return; }
+  trackEvent('went_live');
   setLiveStatus('connecting');
   $('viewer-live-btn').textContent = '■ Stop live';
   try {
@@ -811,6 +814,7 @@ async function exportViewerDocx() {
   try {
     const v = await loadViewer();
     await v.downloadRoomDocx(opts, $('viewer-title').textContent || 'document');
+    trackEvent('doc_exported');
   } catch (e) {
     setLiveStatus('error', String(e.message || e));
     alert('Could not export: ' + (e.message || e));
@@ -1593,6 +1597,7 @@ function metricsProps() {
     syncEnabled: !!(config && config.authEmail),
     sharedIdentity: !!(config && config.portableIdentity),
     viewerUsed: _viewerUsedThisSession,
+    coach: _coachId, // pseudonymous per-coach id (null until computed)
   };
 }
 function trackEvent(event, extra) {
@@ -1604,6 +1609,39 @@ function sendHeartbeat(force) {
   if (!force && now - _lastHeartbeat < 5 * 60 * 1000) return; // at most once / 5 min
   _lastHeartbeat = now;
   DRTelemetry.track('heartbeat', metricsProps());
+}
+
+// Pseudonymous, one-way hashing so we can count/group per coach and per document
+// WITHOUT ever sending a real url, room id, name, or key. 16 hex chars is plenty
+// to avoid collisions across a fleet while staying opaque.
+async function sha256hex(s) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  } catch { return ''; }
+}
+let _coachId = null;
+async function ensureCoachId() {
+  if (_coachId) return _coachId;
+  if (config && config.supabase) _coachId = await sha256hex('cb-coach:' + config.supabase);
+  return _coachId;
+}
+// Report each room the dashboard sees exactly once, as a HASHED doc id — lets
+// the maintainer count unique documents/sessions and docs-per-coach anonymously.
+// The raw room-id set stays in this browser only (localStorage), never sent.
+const REPORTED_DOCS_KEY = 'cardbridge-reported-docs';
+async function reportNewDocs(rooms) {
+  if (!window.DRTelemetry || !DRTelemetry.enabled()) return;
+  let seen;
+  try { seen = new Set(JSON.parse(localStorage.getItem(REPORTED_DOCS_KEY) || '[]')); } catch { seen = new Set(); }
+  const coach = await ensureCoachId();
+  let changed = false;
+  for (const r of (rooms || [])) {
+    if (!r || !r.id || seen.has(r.id)) continue;
+    seen.add(r.id); changed = true;
+    DRTelemetry.track('doc_seen', { coach, doc: await sha256hex('cb-doc:' + r.id) });
+  }
+  if (changed) { try { localStorage.setItem(REPORTED_DOCS_KEY, JSON.stringify([...seen])); } catch {} }
 }
 
 function renderTeam() {
@@ -1929,7 +1967,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else updateSigninBanner();
   };
 
-  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); trackEvent('app_open', { signedIn: syncUnlocked() }); }
+  if (config) { showDashboard(); refreshAll(); updateSigninBanner(); ensureCoachId().then(() => trackEvent('app_open', { signedIn: syncUnlocked() })); }
   else { showConfig(); }
 
   // Auto-refresh every 60s while the tab is open.

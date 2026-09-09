@@ -14,7 +14,13 @@ Do-Not-Track, and is a **complete no-op until the maintainer configures it**.
   `doc_opened`, `shared_identity`),
 - a strict **allowlist of numeric/boolean counters**: number of sessions / live
   sessions / rooms / team members / openable docs / people online, and feature
-  flags (sync on, shared code on, opened a doc, signed in).
+  flags (sync on, shared code on, opened a doc, signed in),
+- two **pseudonymous one-way hashes**: a per-**coach** id (a salted SHA-256 of
+  the coach's Supabase project ref — stable across their devices, opaque and
+  non-reversible) and a per-**document** id (salted SHA-256 of a room id, on
+  `doc_seen` events). These let the maintainer count unique coaches and unique
+  documents and group activity per team, **without** ever receiving the real
+  URL, room id, name, or key. It's pseudonymous, not personally identifying.
 
 **Never sent:** emails, names, Supabase or relay URLs, anon keys, relay tokens,
 room ids, share codes, document content, or anything IP-derived. The payload is
